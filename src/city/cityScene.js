@@ -169,10 +169,13 @@ export function createCity(scene) {
         if (isIntersection) {
           mat = intersectionMat;
         } else if (isRoadRow && !isRoadCol) {
-          // "Calles horizontales": usamos textura rotada
+          // Carretera que corre a lo largo de Z (vertical en el mundo) → textura base
+          mat = roadMatVertical;
+        } else if (isRoadCol && !isRoadRow) {
+          // Carretera que corre a lo largo de X (horizontal en el mundo) → textura rotada
           mat = roadMatHorizontal;
         } else {
-          // "Calles verticales": textura base
+          // fallback por si acaso (no debería pasar)
           mat = roadMatVertical;
         }
 
