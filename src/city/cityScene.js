@@ -23,7 +23,7 @@ const SPECIAL_LOTS = [
     buildingCell: { gridX: 4, gridZ: 7 },
     entranceRoad: { gridX: 3, gridZ: 7 },
     scale: 1.2,
-    rotationY: -Math.PI / 2,
+    rotationY: Math.PI / 2,
     capacity: 4,
   },
   {
@@ -365,7 +365,86 @@ export function createCity(scene) {
       const worldX = (gx - halfGrid) * cellSize;
       const worldZ = (gz - halfGrid) * cellSize;
 
-      // ¿Esta celda pertenece a un lote especial (casa / tienda)?
+      // 2.1) Banquetas alrededor de esta manzana (SIEMPRE)
+      const ySidewalk = sidewalkHeight / 2 + 0.03;
+
+      // norte
+      if (isRoadCell(gx, gz - 1)) {
+        const geom = new THREE.BoxGeometry(
+          cellSize,
+          sidewalkHeight,
+          sidewalkWidth
+        );
+        const sw = new THREE.Mesh(geom, sidewalkMat);
+        sw.position.set(
+          worldX,
+          ySidewalk,
+          worldZ - cellSize / 2 + sidewalkWidth / 2
+        );
+        sw.castShadow = true;
+        sw.receiveShadow = true;
+        scene.add(sw);
+        sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "north" });
+      }
+
+      // sur
+      if (isRoadCell(gx, gz + 1)) {
+        const geom = new THREE.BoxGeometry(
+          cellSize,
+          sidewalkHeight,
+          sidewalkWidth
+        );
+        const sw = new THREE.Mesh(geom, sidewalkMat);
+        sw.position.set(
+          worldX,
+          ySidewalk,
+          worldZ + cellSize / 2 - sidewalkWidth / 2
+        );
+        sw.castShadow = true;
+        sw.receiveShadow = true;
+        scene.add(sw);
+        sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "south" });
+      }
+
+      // oeste
+      if (isRoadCell(gx - 1, gz)) {
+        const geom = new THREE.BoxGeometry(
+          sidewalkWidth,
+          sidewalkHeight,
+          cellSize
+        );
+        const sw = new THREE.Mesh(geom, sidewalkMat);
+        sw.position.set(
+          worldX - cellSize / 2 + sidewalkWidth / 2,
+          ySidewalk,
+          worldZ
+        );
+        sw.castShadow = true;
+        sw.receiveShadow = true;
+        scene.add(sw);
+        sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "west" });
+      }
+
+      // este
+      if (isRoadCell(gx + 1, gz)) {
+        const geom = new THREE.BoxGeometry(
+          sidewalkWidth,
+          sidewalkHeight,
+          cellSize
+        );
+        const sw = new THREE.Mesh(geom, sidewalkMat);
+        sw.position.set(
+          worldX + cellSize / 2 - sidewalkWidth / 2,
+          ySidewalk,
+          worldZ
+        );
+        sw.castShadow = true;
+        sw.receiveShadow = true;
+        scene.add(sw);
+        sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "east" });
+      }
+
+      // 2.2) ¿Lote especial (casa / tienda)? ¿o celda reservada por uno?
       const specialLot = SPECIAL_LOTS.find(
         (lot) =>
           lot.buildingCell.gridX === gx &&
@@ -373,42 +452,40 @@ export function createCity(scene) {
       );
 
       const isReservedBySpecial = SPECIAL_LOTS.some((lot) => {
-        // celda principal del lote
         if (
           lot.buildingCell.gridX === gx &&
           lot.buildingCell.gridZ === gz
         ) {
           return true;
         }
-        // celdas extra (ej. la tienda que ocupa dos manzanas)
         if (!lot.extraCells) return false;
         return lot.extraCells.some(
           (c) => c.gridX === gx && c.gridZ === gz
         );
       });
 
+      // 2.3) Si es un lote especial, colocamos el modelo y NO creamos edificio ni árboles
       if (specialLot) {
-        // Ajustamos la posición del modelo especial antes de crearlo
         let wx = worldX;
         let wz = worldZ;
 
-        // Si es la tienda, la corremos media celda hacia la celda extra (11,7)
+        // Ajuste especial de la tienda: la moviste 1 celda en X
         if (specialLot.id === "shop") {
-          wx += cellSize * 1; // desplazarla medio bloque en X
+          wx += cellSize * 1; // esto es lo que tú ya ajustaste
         }
 
         createSpecialBuilding(specialLot, wx, wz, scene, buildings);
+        // Banquetas ya se crearon arriba, aquí solo evitamos edificio/árboles
         continue;
       }
 
+      // 2.4) Si es celda reservada por un lote especial (segunda manzana de la tienda, etc),
+      //      dejamos solo banqueta/pasto, sin edificio ni árboles.
       if (isReservedBySpecial) {
-        // Esta celda está reservada por un lote especial
-        // (por ejemplo, la segunda manzana que ocupa la tienda).
-        // No ponemos edificio procedimental aquí.
         continue;
       }
 
-      // ---- Edificio / casa procedimental normal ----
+      // 2.5) Edificio procedimental normal
       const distFromCenter = Math.max(
         Math.abs(gx - halfGrid),
         Math.abs(gz - halfGrid)
@@ -508,88 +585,9 @@ export function createCity(scene) {
       scene.add(mesh);
       buildings.push(buildingData);
 
-      // ---- Banquetas pegadas a calles vecinas ----
-      const ySidewalk = sidewalkHeight / 2 + 0.03;
-
-      // norte
-      if (isRoadCell(gx, gz - 1)) {
-        const geom = new THREE.BoxGeometry(
-          cellSize,
-          sidewalkHeight,
-          sidewalkWidth
-        );
-        const sw = new THREE.Mesh(geom, sidewalkMat);
-        sw.position.set(
-          worldX,
-          ySidewalk,
-          worldZ - cellSize / 2 + sidewalkWidth / 2
-        );
-        sw.castShadow = true;
-        sw.receiveShadow = true;
-        scene.add(sw);
-        sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "north" });
-      }
-
-      // sur
-      if (isRoadCell(gx, gz + 1)) {
-        const geom = new THREE.BoxGeometry(
-          cellSize,
-          sidewalkHeight,
-          sidewalkWidth
-        );
-        const sw = new THREE.Mesh(geom, sidewalkMat);
-        sw.position.set(
-          worldX,
-          ySidewalk,
-          worldZ + cellSize / 2 - sidewalkWidth / 2
-        );
-        sw.castShadow = true;
-        sw.receiveShadow = true;
-        scene.add(sw);
-        sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "south" });
-      }
-
-      // oeste
-      if (isRoadCell(gx - 1, gz)) {
-        const geom = new THREE.BoxGeometry(
-          sidewalkWidth,
-          sidewalkHeight,
-          cellSize
-        );
-        const sw = new THREE.Mesh(geom, sidewalkMat);
-        sw.position.set(
-          worldX - cellSize / 2 + sidewalkWidth / 2,
-          ySidewalk,
-          worldZ
-        );
-        sw.castShadow = true;
-        sw.receiveShadow = true;
-        scene.add(sw);
-        sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "west" });
-      }
-
-      // este
-      if (isRoadCell(gx + 1, gz)) {
-        const geom = new THREE.BoxGeometry(
-          sidewalkWidth,
-          sidewalkHeight,
-          cellSize
-        );
-        const sw = new THREE.Mesh(geom, sidewalkMat);
-        sw.position.set(
-          worldX + cellSize / 2 - sidewalkWidth / 2,
-          ySidewalk,
-          worldZ
-        );
-        sw.castShadow = true;
-        sw.receiveShadow = true;
-        scene.add(sw);
-        sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "east" });
-      }
-
-      // ---- Árboles dentro de la manzana (sin tocar edificio ni banqueta) ----
+      // 2.6) Árboles SOLO en manzanas normales (no especiales / reservadas)
       const cellHalf = cellSize / 2;
-      const walkwayInner = cellHalf - sidewalkWidth; // límite interno de banqueta
+      const walkwayInner = cellHalf - sidewalkWidth;
       const marginWalk = 0.25;
       const marginBuild = 0.25;
 
@@ -631,6 +629,7 @@ export function createCity(scene) {
       }
     }
   }
+
 
   // === 3) Cruces peatonales (fuera del cuadrado de la intersección) ===
   const crosswalkWidthWorld = cellSize * 0.8;   // ancho de banqueta a banqueta
