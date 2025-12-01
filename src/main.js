@@ -1,8 +1,6 @@
 // src/main.js
 import { createEngine } from "./core/engine.js";
 import { createCity, applyCityState } from "./city/cityScene.js";
-import { createDataSource } from "./data/index.js";
-import { mapDataToCityState } from "./data/dataMapper.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("app");
@@ -11,32 +9,19 @@ document.addEventListener("DOMContentLoaded", () => {
     throw new Error("No se encontró el contenedor #app");
   }
 
-  (async () => {
-    const engine = createEngine(container);
-    const city = createCity(engine.scene);
+  const engine = createEngine(container);
+  const city = createCity(engine.scene);
 
-    const dataSource = createDataSource("dummy");
-    await dataSource.init();
+  const initialState = {
+    buildingHeightMultiplier: 1,
+    skyColor: "#6ca9ff",    // cielo más azulito
+    cityGlowIntensity: 0.7, // ventanitas un poco más brillantes
+  };
 
-    async function updateData() {
-      try {
-        const metrics = await dataSource.fetchData();
-        const cityState = mapDataToCityState(metrics);
-        applyCityState(city, cityState, engine.scene);
+  applyCityState(city, initialState, engine.scene);
 
-        // Debug opcional
-        // console.log("metrics:", metrics, "cityState:", cityState);
-      } catch (err) {
-        console.error("Error actualizando datos:", err);
-      }
-    }
+  engine.start();
 
-    // Primera actualización inmediata
-    await updateData();
-
-    // Actualizar cada 3 segundos
-    setInterval(updateData, 3000);
-
-    engine.start();
-  })();
+  // Debug en consola si quieres inspeccionar la ciudad:
+  // window.__CITY3D__ = { engine, city };
 });
