@@ -11,31 +11,29 @@ function createRoadTexture({ intersection = false } = {}) {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
 
+  // Fondo asfalto
   ctx.fillStyle = "#3f4349";
   ctx.fillRect(0, 0, size, size);
 
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 6;
-  ctx.setLineDash([]);
+  if (!intersection) {
+    // =========================
+    // TRAMO DE CALLE NORMAL
+    // =========================
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 6;
+    ctx.setLineDash([14, 10]); // línea discontinua
 
-  if (intersection) {
-    // cruz completa
     ctx.beginPath();
     ctx.moveTo(size / 2, 0);
     ctx.lineTo(size / 2, size);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(0, size / 2);
-    ctx.lineTo(size, size / 2);
     ctx.stroke();
   } else {
-    // línea discontinua vertical
-    ctx.setLineDash([14, 10]);
-    ctx.beginPath();
-    ctx.moveTo(size / 2, 0);
-    ctx.lineTo(size / 2, size);
-    ctx.stroke();
+    // =========================
+    // INTERSECCIÓN
+    // =========================
+    // La dejamos solo con asfalto (sin cruz blanca).
+    // Todo el “dibujo” de los cruces peatonales lo estamos
+    // haciendo con geometría aparte, fuera de este tile.
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -129,14 +127,47 @@ function createTree() {
   return tree;
 }
 
+/**
+ * Grupo de franjas tipo "zebra" para un cruce peatonal.
+ * width  = ancho total del cruce (de banqueta a banqueta).
+ * depth  = qué tanto se mete en la calle.
+ */
+function createCrosswalk(width, depth, stripeCount = 7) {
+  const group = new THREE.Group();
+
+  const usableWidth = width * 0.8;
+  const stripeWidth = usableWidth / stripeCount;
+  const totalGap = width - usableWidth;
+  const gap = totalGap / (stripeCount + 1);
+
+  const geom = new THREE.BoxGeometry(stripeWidth, 0.02, depth);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xf3d35b,
+    roughness: 0.4,
+    metalness: 0.15,
+  });
+
+  let x = -width / 2 + gap + stripeWidth / 2;
+  for (let i = 0; i < stripeCount; i++) {
+    const stripe = new THREE.Mesh(geom, mat);
+    stripe.position.set(x, 0.01, 0);
+    stripe.castShadow = true;
+    stripe.receiveShadow = true;
+    group.add(stripe);
+    x += stripeWidth + gap;
+  }
+
+  return group;
+}
+
 export function createCity(scene) {
   // Parámetros globales de la cuadrícula
   const gridSize = 15;
-  const cellSize = 7;              // <- celdas un poco más grandes
+  const cellSize = 7;              // celdas amplias
   const roadStep = 3;
   const halfGrid = (gridSize - 1) / 2;
 
-  // helper para saber si una celda es calle (con límites)
+  // helper: ¿esta celda es calle?
   const isRoadCell = (gx, gz) =>
     gx >= 0 &&
     gx < gridSize &&
@@ -188,14 +219,16 @@ export function createCity(scene) {
     metalness: 0.0,
   });
   const sidewalkHeight = 0.08;
-  const sidewalkWidthFactor = 0.18; // un poco más delgadas
+  const sidewalkWidthFactor = 0.18;
   const sidewalkWidth = cellSize * sidewalkWidthFactor;
 
   const sidewalks = [];
   const roads = [];
   const buildings = [];
   const trees = [];
+  const crosswalks = [];
   const roadMap = new Map();
+
 
   const baseBuildingGeom = new THREE.BoxGeometry(1, 1, 1);
 
@@ -247,7 +280,7 @@ export function createCity(scene) {
     }
   }
 
-  // === 2) Edificios, banquetas y árboles (solo celdas SIN calle) ===
+  // === 2) Edificios, banquetas y árboles (celdas SIN calle) ===
   for (let gx = 0; gx < gridSize; gx++) {
     for (let gz = 0; gz < gridSize; gz++) {
       if (isRoadCell(gx, gz)) continue;
@@ -316,7 +349,7 @@ export function createCity(scene) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
 
-      // edificios un poco más chicos para dar aire
+      // edificios más compactos
       const footprintFactor = type === "tower" ? 0.5 : 0.4;
       const footprint = cellSize * footprintFactor;
       const buildingHalf = footprint / 2;
@@ -359,7 +392,7 @@ export function createCity(scene) {
       // ---- Banquetas pegadas a calles vecinas ----
       const ySidewalk = sidewalkHeight / 2 + 0.03;
 
-      // vecino norte
+      // norte
       if (isRoadCell(gx, gz - 1)) {
         const geom = new THREE.BoxGeometry(
           cellSize,
@@ -378,7 +411,7 @@ export function createCity(scene) {
         sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "north" });
       }
 
-      // vecino sur
+      // sur
       if (isRoadCell(gx, gz + 1)) {
         const geom = new THREE.BoxGeometry(
           cellSize,
@@ -397,7 +430,7 @@ export function createCity(scene) {
         sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "south" });
       }
 
-      // vecino oeste
+      // oeste
       if (isRoadCell(gx - 1, gz)) {
         const geom = new THREE.BoxGeometry(
           sidewalkWidth,
@@ -416,7 +449,7 @@ export function createCity(scene) {
         sidewalks.push({ mesh: sw, gridX: gx, gridZ: gz, side: "west" });
       }
 
-      // vecino este
+      // este
       if (isRoadCell(gx + 1, gz)) {
         const geom = new THREE.BoxGeometry(
           sidewalkWidth,
@@ -438,8 +471,8 @@ export function createCity(scene) {
       // ---- Árboles dentro de la manzana (sin tocar edificio ni banqueta) ----
       const cellHalf = cellSize / 2;
       const walkwayInner = cellHalf - sidewalkWidth; // límite interno de banqueta
-      const marginWalk = 0.25;   // separación de banqueta
-      const marginBuild = 0.25;  // separación del edificio
+      const marginWalk = 0.25;
+      const marginBuild = 0.25;
 
       const maxRadius = walkwayInner - marginWalk;
       const minRadius = buildingHalf + marginBuild;
@@ -460,7 +493,6 @@ export function createCity(scene) {
             : 0;
         treeCount = Math.min(treeCount, corners.length);
 
-        // randomizar orden
         for (let i = corners.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [corners[i], corners[j]] = [corners[j], corners[i]];
@@ -481,55 +513,148 @@ export function createCity(scene) {
     }
   }
 
-  // === 3) Barda perimetral ===
-  const wallHeight = 2.2;
-  const wallThickness = 0.5;
-  const wallMat = new THREE.MeshStandardMaterial({
-    color: 0x444444,
-    roughness: 0.7,
-    metalness: 0.2,
-  });
+  // === 3) Cruces peatonales (fuera del cuadrado de la intersección) ===
+  const crosswalkWidthWorld = cellSize * 0.8;   // ancho de banqueta a banqueta
+  const crosswalkDepthWorld = cellSize * 0.28;  // cuánto invade la calle
 
+  for (const road of roads) {
+    if (!road.isIntersection) continue;
+
+    const gx = road.gridX;
+    const gz = road.gridZ;
+    const centerX = (gx - halfGrid) * cellSize;
+    const centerZ = (gz - halfGrid) * cellSize;
+
+    // Norte (sobre el tramo de calle que llega desde arriba)
+    if (gz > 0) {
+      const cwN = createCrosswalk(
+        crosswalkWidthWorld,
+        crosswalkDepthWorld,
+        7
+      );
+      cwN.position.set(
+        centerX,
+        0.03,
+        centerZ - cellSize / 2 - crosswalkDepthWorld / 2
+      );
+      scene.add(cwN);
+      crosswalks.push(cwN);
+    }
+
+    // Sur
+    if (gz < gridSize - 1) {
+      const cwS = createCrosswalk(
+        crosswalkWidthWorld,
+        crosswalkDepthWorld,
+        7
+      );
+      cwS.position.set(
+        centerX,
+        0.03,
+        centerZ + cellSize / 2 + crosswalkDepthWorld / 2
+      );
+      scene.add(cwS);
+      crosswalks.push(cwS);
+    }
+
+    // Este (rotado 90°)
+    if (gx < gridSize - 1) {
+      const cwE = createCrosswalk(
+        crosswalkWidthWorld,
+        crosswalkDepthWorld,
+        7
+      );
+      cwE.rotation.y = Math.PI / 2;
+      cwE.position.set(
+        centerX + cellSize / 2 + crosswalkDepthWorld / 2,
+        0.03,
+        centerZ
+      );
+      scene.add(cwE);
+      crosswalks.push(cwE);
+    }
+
+    // Oeste
+    if (gx > 0) {
+      const cwW = createCrosswalk(
+        crosswalkWidthWorld,
+        crosswalkDepthWorld,
+        7
+      );
+      cwW.rotation.y = Math.PI / 2;
+      cwW.position.set(
+        centerX - cellSize / 2 - crosswalkDepthWorld / 2,
+        0.03,
+        centerZ
+      );
+      scene.add(cwW);
+      crosswalks.push(cwW);
+    }
+  }
+
+  // === 4) Acera perimetral (en vez de barda) ===
   const halfGround = groundSize / 2;
-  const extra = cellSize * 0.5; // que sobresalga un poquito
+  // usamos el mismo grosor que las banquetas normales
+  const perimeterWidth = sidewalkWidth;
+  const yPerimeter = sidewalkHeight / 2 + 0.03;
 
-  // Oeste / Este
-  const wallGeomZ = new THREE.BoxGeometry(
-    wallThickness,
-    wallHeight,
-    groundSize + extra
+  const perimeterSidewalks = [];
+
+  // lados oeste / este
+  const sideGeomZ = new THREE.BoxGeometry(
+    perimeterWidth,
+    sidewalkHeight,
+    groundSize
   );
-  const westWall = new THREE.Mesh(wallGeomZ, wallMat);
-  westWall.position.set(-halfGround - wallThickness / 2, wallHeight / 2, 0);
-  westWall.castShadow = true;
-  westWall.receiveShadow = true;
-  scene.add(westWall);
-
-  const eastWall = new THREE.Mesh(wallGeomZ, wallMat);
-  eastWall.position.set(halfGround + wallThickness / 2, wallHeight / 2, 0);
-  eastWall.castShadow = true;
-  eastWall.receiveShadow = true;
-  scene.add(eastWall);
-
-  // Norte / Sur
-  const wallGeomX = new THREE.BoxGeometry(
-    groundSize + extra,
-    wallHeight,
-    wallThickness
+  const westSide = new THREE.Mesh(sideGeomZ, sidewalkMat);
+  westSide.position.set(
+    -halfGround + perimeterWidth / 2,
+    yPerimeter,
+    0
   );
-  const northWall = new THREE.Mesh(wallGeomX, wallMat);
-  northWall.position.set(0, wallHeight / 2, -halfGround - wallThickness / 2);
-  northWall.castShadow = true;
-  northWall.receiveShadow = true;
-  scene.add(northWall);
+  westSide.castShadow = true;
+  westSide.receiveShadow = true;
+  scene.add(westSide);
+  perimeterSidewalks.push(westSide);
 
-  const southWall = new THREE.Mesh(wallGeomX, wallMat);
-  southWall.position.set(0, wallHeight / 2, halfGround + wallThickness / 2);
-  southWall.castShadow = true;
-  southWall.receiveShadow = true;
-  scene.add(southWall);
+  const eastSide = new THREE.Mesh(sideGeomZ, sidewalkMat);
+  eastSide.position.set(
+    halfGround - perimeterWidth / 2,
+    yPerimeter,
+    0
+  );
+  eastSide.castShadow = true;
+  eastSide.receiveShadow = true;
+  scene.add(eastSide);
+  perimeterSidewalks.push(eastSide);
 
-  const boundaries = { westWall, eastWall, northWall, southWall };
+  // lados norte / sur
+  const sideGeomX = new THREE.BoxGeometry(
+    groundSize,
+    sidewalkHeight,
+    perimeterWidth
+  );
+  const northSide = new THREE.Mesh(sideGeomX, sidewalkMat);
+  northSide.position.set(
+    0,
+    yPerimeter,
+    -halfGround + perimeterWidth / 2
+  );
+  northSide.castShadow = true;
+  northSide.receiveShadow = true;
+  scene.add(northSide);
+  perimeterSidewalks.push(northSide);
+
+  const southSide = new THREE.Mesh(sideGeomX, sidewalkMat);
+  southSide.position.set(
+    0,
+    yPerimeter,
+    halfGround - perimeterWidth / 2
+  );
+  southSide.castShadow = true;
+  southSide.receiveShadow = true;
+  scene.add(southSide);
+  perimeterSidewalks.push(southSide);
 
   const fogColor = new THREE.Color(0x6ca9ff).multiplyScalar(0.7);
   scene.fog = new THREE.FogExp2(fogColor, 0.007);
@@ -538,10 +663,11 @@ export function createCity(scene) {
     ground,
     roads,
     sidewalks,
+    perimeterSidewalks,
+    crosswalks,
     buildings,
     trees,
     roadMap,
-    boundaries,
     gridSize,
     cellSize,
     sidewalkWidth,
