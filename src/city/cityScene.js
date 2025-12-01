@@ -48,7 +48,7 @@ function createRoadTexture({ intersection = false } = {}) {
 }
 
 /**
- * Crea textura de edificio con "ventanas" (solo para las fachadas).
+ * Crea textura de edificio con "ventanas" (solo para fachadas).
  */
 function createBuildingTexture(type) {
   const size = 128;
@@ -101,6 +101,42 @@ function createBuildingTexture(type) {
   return texture;
 }
 
+/**
+ * Crea un arbolito (tronco + copa) como Group.
+ */
+function createTree() {
+  const tree = new THREE.Group();
+
+  const trunkHeight = 2;
+  const trunkGeom = new THREE.CylinderGeometry(0.25, 0.35, trunkHeight, 6);
+  const trunkMat = new THREE.MeshStandardMaterial({
+    color: 0x8a5a2b,
+    roughness: 0.8,
+    metalness: 0.1,
+  });
+  const trunk = new THREE.Mesh(trunkGeom, trunkMat);
+  trunk.castShadow = true;
+  trunk.receiveShadow = true;
+  trunk.position.y = trunkHeight / 2;
+
+  const foliageHeight = 2.5;
+  const foliageGeom = new THREE.ConeGeometry(1.1, foliageHeight, 8);
+  const foliageMat = new THREE.MeshStandardMaterial({
+    color: 0x3c7d3b,
+    roughness: 0.6,
+    metalness: 0.05,
+  });
+  const foliage = new THREE.Mesh(foliageGeom, foliageMat);
+  foliage.castShadow = true;
+  foliage.receiveShadow = true;
+  foliage.position.y = trunkHeight + foliageHeight / 2 - 0.2;
+
+  tree.add(trunk);
+  tree.add(foliage);
+
+  return tree;
+}
+
 export function createCity(scene) {
   // Parámetros de la cuadrícula
   const gridSize = 15; // 15x15 celdas
@@ -147,6 +183,7 @@ export function createCity(scene) {
 
   const roads = [];
   const buildings = [];
+  const trees = [];
 
   // Geometría base para todos los edificios
   const baseBuildingGeom = new THREE.BoxGeometry(1, 1, 1);
@@ -175,7 +212,7 @@ export function createCity(scene) {
           // Carretera que corre a lo largo de X (horizontal en el mundo) → textura rotada
           mat = roadMatHorizontal;
         } else {
-          // fallback por si acaso (no debería pasar)
+          // fallback
           mat = roadMatVertical;
         }
 
@@ -297,6 +334,39 @@ export function createCity(scene) {
 
       scene.add(mesh);
       buildings.push(buildingData);
+
+      // === Árboles alrededor del edificio ===
+      const cornerOffset = cellSize * 0.35;
+      const corners = [
+        [cornerOffset, cornerOffset],
+        [cornerOffset, -cornerOffset],
+        [-cornerOffset, cornerOffset],
+        [-cornerOffset, -cornerOffset],
+      ];
+
+      const maxTreesForType = type === "house" ? 3 : 2;
+      let treeCount = Math.random() < 0.6
+        ? Math.floor(Math.random() * maxTreesForType) + 1
+        : 0;
+      treeCount = Math.min(treeCount, corners.length);
+
+      // Mezclar un poco el orden para no repetir siempre el mismo patrón
+      for (let i = corners.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [corners[i], corners[j]] = [corners[j], corners[i]];
+      }
+
+      for (let i = 0; i < treeCount; i++) {
+        const [ox, oz] = corners[i];
+        const tree = createTree();
+        tree.position.set(worldX + ox, 0, worldZ + oz);
+        scene.add(tree);
+        trees.push({
+          group: tree,
+          gridX: gx,
+          gridZ: gz,
+        });
+      }
     }
   }
 
@@ -308,6 +378,7 @@ export function createCity(scene) {
     ground,
     roads,
     buildings,
+    trees,
     gridSize,
     cellSize,
   };
