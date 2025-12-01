@@ -5,7 +5,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 export function createEngine(container) {
   const scene = new THREE.Scene();
 
-  // Cielo base (azul suave, luego lo podemos sobreescribir desde la ciudad)
+  // Cielo base (azul suave)
   scene.background = new THREE.Color(0x6ca9ff);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -14,7 +14,6 @@ export function createEngine(container) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  // Colores y tonemapping más bonitos
   if ("outputColorSpace" in renderer) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
   } else {
@@ -38,17 +37,13 @@ export function createEngine(container) {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
 
-  // === Iluminación ===
-
-  // Luz hemisférica: da sensación de cielo arriba y tierra abajo
+  // Luces
   const hemiLight = new THREE.HemisphereLight(0x6ca9ff, 0x1f3b21, 0.8);
   scene.add(hemiLight);
 
-  // Luz ambiental suave
   const ambient = new THREE.AmbientLight(0xffffff, 0.25);
   scene.add(ambient);
 
-  // Luz direccional como sol
   const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
   dirLight.position.set(40, 60, 20);
   dirLight.castShadow = true;
@@ -60,6 +55,10 @@ export function createEngine(container) {
   dirLight.shadow.camera.top = 80;
   dirLight.shadow.camera.bottom = -80;
   scene.add(dirLight);
+
+  // Para delta time
+  const clock = new THREE.Clock();
+  let updateCallback = null;
 
   // Resize
   const onResize = () => {
@@ -76,6 +75,12 @@ export function createEngine(container) {
   function renderLoop() {
     if (!isRunning) return;
     requestAnimationFrame(renderLoop);
+
+    const delta = clock.getDelta();
+    if (typeof updateCallback === "function") {
+      updateCallback(delta);
+    }
+
     controls.update();
     renderer.render(scene, camera);
   }
@@ -83,11 +88,16 @@ export function createEngine(container) {
   function start() {
     if (isRunning) return;
     isRunning = true;
+    clock.start();
     renderLoop();
   }
 
   function stop() {
     isRunning = false;
+  }
+
+  function onUpdate(fn) {
+    updateCallback = fn;
   }
 
   return {
@@ -97,5 +107,6 @@ export function createEngine(container) {
     controls,
     start,
     stop,
+    onUpdate,
   };
 }
