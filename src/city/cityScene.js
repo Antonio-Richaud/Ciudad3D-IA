@@ -1,5 +1,45 @@
 // src/city/cityScene.js
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+const gltfLoader = new GLTFLoader();
+
+// Rutas a tus modelos (ajusta si usas otros nombres)
+const HOUSE_MODEL_URL = "/models/casa.glb";
+const SHOP_MODEL_URL = "/models/tienda.glb";
+
+/**
+ * Lotes especiales donde NO queremos edificio procedimental,
+ * sino tu modelo de Blender.
+ *
+ * buildingCell = celda de manzana donde va el modelo.
+ * entranceRoad = celda de calle que será el "punto de entrada" del agente.
+ */
+const SPECIAL_LOTS = [
+  {
+    id: "home",
+    label: "Casa",
+    modelUrl: HOUSE_MODEL_URL,
+    buildingCell: { gridX: 4, gridZ: 7 },
+    entranceRoad: { gridX: 3, gridZ: 7 },
+    scale: 1.2,
+    rotationY: -Math.PI / 2,
+    capacity: 4,
+  },
+  {
+    id: "shop",
+    label: "Tienda",
+    modelUrl: SHOP_MODEL_URL,
+    buildingCell: { gridX: 10, gridZ: 7 },
+    entranceRoad: { gridX: 9, gridZ: 7 },
+    scale: 0.75,
+    rotationY: Math.PI,
+    capacity: 10,
+    extraCells: [
+      { gridX: 11, gridZ: 7 },
+    ],
+  },
+];
 
 /**
  * Textura de pavimento con línea central o cruce.
@@ -125,6 +165,43 @@ function createTree() {
   tree.add(foliage);
 
   return tree;
+}
+
+function createSpecialBuilding(lot, worldX, worldZ, scene, buildings) {
+  gltfLoader.load(
+    lot.modelUrl,
+    (gltf) => {
+      const root = gltf.scene;
+      root.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        }
+      });
+
+      root.position.set(worldX, 0, worldZ);
+      const s = lot.scale ?? 1;
+      root.scale.setScalar(s);
+      root.rotation.y = lot.rotationY ?? 0;
+
+      scene.add(root);
+
+      // Lo registramos como "edificio" especial dentro de la ciudad
+      buildings.push({
+        id: `poi-${lot.id}`,
+        mesh: root,
+        type: lot.id,
+        capacity: lot.capacity ?? 10,
+        baseHeight: lot.baseHeight ?? 5,
+        gridX: lot.buildingCell.gridX,
+        gridZ: lot.buildingCell.gridZ,
+      });
+    },
+    undefined,
+    (error) => {
+      console.error(`Error cargando modelo ${lot.id}:`, error);
+    }
+  );
 }
 
 /**
@@ -288,7 +365,50 @@ export function createCity(scene) {
       const worldX = (gx - halfGrid) * cellSize;
       const worldZ = (gz - halfGrid) * cellSize;
 
-      // ---- Edificio / casa ----
+      // ¿Esta celda pertenece a un lote especial (casa / tienda)?
+      const specialLot = SPECIAL_LOTS.find(
+        (lot) =>
+          lot.buildingCell.gridX === gx &&
+          lot.buildingCell.gridZ === gz
+      );
+
+      const isReservedBySpecial = SPECIAL_LOTS.some((lot) => {
+        // celda principal del lote
+        if (
+          lot.buildingCell.gridX === gx &&
+          lot.buildingCell.gridZ === gz
+        ) {
+          return true;
+        }
+        // celdas extra (ej. la tienda que ocupa dos manzanas)
+        if (!lot.extraCells) return false;
+        return lot.extraCells.some(
+          (c) => c.gridX === gx && c.gridZ === gz
+        );
+      });
+
+      if (specialLot) {
+        // Ajustamos la posición del modelo especial antes de crearlo
+        let wx = worldX;
+        let wz = worldZ;
+
+        // Si es la tienda, la corremos media celda hacia la celda extra (11,7)
+        if (specialLot.id === "shop") {
+          wx += cellSize * 1; // desplazarla medio bloque en X
+        }
+
+        createSpecialBuilding(specialLot, wx, wz, scene, buildings);
+        continue;
+      }
+
+      if (isReservedBySpecial) {
+        // Esta celda está reservada por un lote especial
+        // (por ejemplo, la segunda manzana que ocupa la tienda).
+        // No ponemos edificio procedimental aquí.
+        continue;
+      }
+
+      // ---- Edificio / casa procedimental normal ----
       const distFromCenter = Math.max(
         Math.abs(gx - halfGrid),
         Math.abs(gz - halfGrid)
@@ -349,7 +469,6 @@ export function createCity(scene) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
 
-      // edificios más compactos
       const footprintFactor = type === "tower" ? 0.5 : 0.4;
       const footprint = cellSize * footprintFactor;
       const buildingHalf = footprint / 2;
@@ -659,6 +778,19 @@ export function createCity(scene) {
   const fogColor = new THREE.Color(0x6ca9ff).multiplyScalar(0.7);
   scene.fog = new THREE.FogExp2(fogColor, 0.007);
 
+  // === Puntos de interés (POIs) para el agente ===
+  const pointsOfInterest = {};
+
+  for (const lot of SPECIAL_LOTS) {
+    pointsOfInterest[lot.id] = {
+      id: lot.id,
+      label: lot.label,
+      type: lot.id, // "home" | "shop" ...
+      buildingCell: { ...lot.buildingCell },
+      entranceRoad: { ...lot.entranceRoad },
+    };
+  }
+
   const city = {
     ground,
     roads,
@@ -668,6 +800,7 @@ export function createCity(scene) {
     buildings,
     trees,
     roadMap,
+    pointsOfInterest,
     gridSize,
     cellSize,
     sidewalkWidth,
