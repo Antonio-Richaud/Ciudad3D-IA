@@ -2,7 +2,7 @@
 import * as THREE from "three";
 
 /**
- * Crea una textura de pavimento con línea blanca central
+ * Crea una textura de pavimento con línea blanca central o cruce.
  */
 function createRoadTexture({ intersection = false } = {}) {
   const size = 128;
@@ -11,7 +11,7 @@ function createRoadTexture({ intersection = false } = {}) {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
 
-  // Fondo asfalto (gris un poco más clarito)
+  // Fondo asfalto (gris un poco más bajo)
   ctx.fillStyle = "#3f4349";
   ctx.fillRect(0, 0, size, size);
 
@@ -31,7 +31,7 @@ function createRoadTexture({ intersection = false } = {}) {
     ctx.lineTo(size, size / 2);
     ctx.stroke();
   } else {
-    // Línea discontinua en el centro
+    // Línea discontinua en el centro (vertical en la textura)
     ctx.setLineDash([14, 10]);
     ctx.beginPath();
     ctx.moveTo(size / 2, 0);
@@ -48,7 +48,7 @@ function createRoadTexture({ intersection = false } = {}) {
 }
 
 /**
- * Crea textura de edificio con "ventanas"
+ * Crea textura de edificio con "ventanas" (solo para las fachadas).
  */
 function createBuildingTexture(type) {
   const size = 128;
@@ -59,9 +59,9 @@ function createBuildingTexture(type) {
 
   // Color base según tipo
   if (type === "tower") {
-    ctx.fillStyle = "#1f2633"; // tipo vidrio oscuro
+    ctx.fillStyle = "#1f2633"; // vidrio/metal oscuro
   } else {
-    ctx.fillStyle = "#5c4b3c"; // tipo fachada café/clara
+    ctx.fillStyle = "#5c4b3c"; // fachada más cálida
   }
   ctx.fillRect(0, 0, size, size);
 
@@ -112,19 +112,29 @@ export function createCity(scene) {
   const groundSize = gridSize * cellSize;
   const groundGeom = new THREE.PlaneGeometry(groundSize, groundSize);
   const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x7fbf7a, // verde más clarito, tipo parque
+    color: 0x7fbf7a, // verde pasto suave
   });
   const ground = new THREE.Mesh(groundGeom, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Texturas de calles
-  const roadTexture = createRoadTexture({ intersection: false });
+  // === Texturas y materiales de calles ===
+  const roadTextureBase = createRoadTexture({ intersection: false });
+  const roadTextureRotated = roadTextureBase.clone();
+  roadTextureRotated.center.set(0.5, 0.5);
+  roadTextureRotated.rotation = Math.PI / 2;
+
   const intersectionTexture = createRoadTexture({ intersection: true });
 
-  const roadMat = new THREE.MeshStandardMaterial({
-    map: roadTexture,
+  const roadMatVertical = new THREE.MeshStandardMaterial({
+    map: roadTextureBase,
+    roughness: 0.95,
+    metalness: 0.0,
+  });
+
+  const roadMatHorizontal = new THREE.MeshStandardMaterial({
+    map: roadTextureRotated,
     roughness: 0.95,
     metalness: 0.0,
   });
@@ -138,6 +148,7 @@ export function createCity(scene) {
   const roads = [];
   const buildings = [];
 
+  // Geometría base para todos los edificios
   const baseBuildingGeom = new THREE.BoxGeometry(1, 1, 1);
 
   for (let gx = 0; gx < gridSize; gx++) {
@@ -153,7 +164,18 @@ export function createCity(scene) {
       if (isRoad) {
         // === Calles ===
         const roadGeom = new THREE.PlaneGeometry(cellSize, cellSize);
-        const mat = isIntersection ? intersectionMat : roadMat;
+
+        let mat;
+        if (isIntersection) {
+          mat = intersectionMat;
+        } else if (isRoadRow && !isRoadCol) {
+          // "Calles horizontales": usamos textura rotada
+          mat = roadMatHorizontal;
+        } else {
+          // "Calles verticales": textura base
+          mat = roadMatVertical;
+        }
+
         const road = new THREE.Mesh(roadGeom, mat);
         road.rotation.x = -Math.PI / 2;
         road.position.set(worldX, 0.02, worldZ);
@@ -171,7 +193,6 @@ export function createCity(scene) {
 
       // === Celdas con edificios/casas ===
 
-      // Distancia del centro para decidir tipo de edificio
       const distFromCenter = Math.max(
         Math.abs(gx - halfGrid),
         Math.abs(gz - halfGrid)
@@ -194,9 +215,10 @@ export function createCity(scene) {
       const t = Math.random();
       const baseHeight = THREE.MathUtils.lerp(minHeight, maxHeight, t);
 
+      // Textura solo para fachadas
       const facadeTexture = createBuildingTexture(type);
 
-      const mat = new THREE.MeshStandardMaterial({
+      const facadeMat = new THREE.MeshStandardMaterial({
         map: facadeTexture,
         emissiveMap: facadeTexture,
         color: 0xffffff,
@@ -206,7 +228,31 @@ export function createCity(scene) {
         emissiveIntensity: type === "tower" ? 0.8 : 0.4,
       });
 
-      const mesh = new THREE.Mesh(baseBuildingGeom, mat);
+      const roofColor = type === "tower" ? 0x30343d : 0x8b4c39;
+      const roofMat = new THREE.MeshStandardMaterial({
+        color: roofColor,
+        roughness: 0.6,
+        metalness: 0.1,
+      });
+
+      const bottomMat = new THREE.MeshStandardMaterial({
+        color: 0x222222,
+        roughness: 0.95,
+        metalness: 0.0,
+      });
+
+      // Orden de materiales en BoxGeometry:
+      // 0: +x, 1: -x, 2: +y (top), 3: -y (bottom), 4: +z, 5: -z
+      const materials = [
+        facadeMat, // derecha
+        facadeMat, // izquierda
+        roofMat,   // techo
+        bottomMat, // base
+        facadeMat, // frente
+        facadeMat, // atrás
+      ];
+
+      const mesh = new THREE.Mesh(baseBuildingGeom, materials);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
 
@@ -223,6 +269,7 @@ export function createCity(scene) {
           : Math.round(baseHeight * 4);
 
       const buildingId = `b-${gx}-${gz}`;
+      const baseEmissiveIntensity = type === "tower" ? 0.8 : 0.4;
 
       mesh.userData = {
         ...mesh.userData,
@@ -232,7 +279,7 @@ export function createCity(scene) {
         capacity,
         gridX: gx,
         gridZ: gz,
-        baseEmissiveIntensity: mat.emissiveIntensity,
+        baseEmissiveIntensity,
       };
 
       const buildingData = {
@@ -250,7 +297,7 @@ export function createCity(scene) {
     }
   }
 
-  // Niebla ligera, ajustada al cielo azul
+  // Niebla ligera
   const fogColor = new THREE.Color(0x6ca9ff).multiplyScalar(0.7);
   scene.fog = new THREE.FogExp2(fogColor, 0.007);
 
@@ -265,13 +312,13 @@ export function createCity(scene) {
   return city;
 }
 
-// Aplica un estado visual genérico (por si luego quieres volver a usar datos)
+// Aplica un estado visual genérico (para futuros datos / efectos)
 export function applyCityState(city, state, scene) {
   const { buildings } = city;
   const {
     buildingHeightMultiplier = 1,
     skyColor = "#6ca9ff",
-    cityGlowIntensity = 0.6,
+    cityGlowIntensity = 0.7,
   } = state;
 
   buildings.forEach((b) => {
@@ -282,11 +329,18 @@ export function applyCityState(city, state, scene) {
     mesh.scale.y = newHeight;
     mesh.position.y = newHeight / 2;
 
-    const mat = mesh.material;
-    if (mat && mat.isMeshStandardMaterial) {
-      const baseEmissive =
-        mesh.userData.baseEmissiveIntensity ?? 0.5;
-      mat.emissiveIntensity = baseEmissive * cityGlowIntensity;
+    const baseEmissive =
+      mesh.userData.baseEmissiveIntensity ?? 0.5;
+
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach((mat) => {
+        if (mat && mat.isMeshStandardMaterial) {
+          mat.emissiveIntensity = baseEmissive * cityGlowIntensity;
+        }
+      });
+    } else if (mesh.material && mesh.material.isMeshStandardMaterial) {
+      mesh.material.emissiveIntensity =
+        baseEmissive * cityGlowIntensity;
     }
   });
 
@@ -299,7 +353,7 @@ export function applyCityState(city, state, scene) {
   }
 }
 
-// Helpers para agentes: convertir entre grid y mundo
+// Helpers para agentes
 export function gridToWorld(city, gridX, gridZ, y = 0) {
   const half = (city.gridSize - 1) / 2;
   return {
