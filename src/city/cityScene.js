@@ -32,7 +32,7 @@ const SPECIAL_LOTS = [
     modelUrl: SHOP_MODEL_URL,
     buildingCell: { gridX: 10, gridZ: 7 },
     entranceRoad: { gridX: 9, gridZ: 7 },
-    scale: 0.75,
+    scale: 0.65,
     rotationY: Math.PI,
     capacity: 10,
     extraCells: [
@@ -471,7 +471,7 @@ export function createCity(scene) {
 
         // Ajuste especial de la tienda: la moviste 1 celda en X
         if (specialLot.id === "shop") {
-          wx += cellSize * 1; // esto es lo que tú ya ajustaste
+          wx += cellSize * 0.90; // esto es lo que tú ya ajustaste
         }
 
         createSpecialBuilding(specialLot, wx, wz, scene, buildings);
