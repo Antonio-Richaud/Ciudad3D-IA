@@ -99,7 +99,7 @@ export class WalkerAgent {
     this.object3D = createWalkerMesh();
     this.scene.add(this.object3D);
 
-    // Colocarlo en su calle inicial (con un eje arbitrario, luego se corrige al primer movimiento)
+    // Colocarlo inicialmente en el centro de su nodo de calle
     const initialWorld = gridToWorld(
       this.city,
       this.currentRoadNode.gridX,
@@ -233,27 +233,25 @@ export class WalkerAgent {
       nextNode = this.brain.chooseNextRoad(currentNode);
     }
 
-    // Si el brain no da nada (sin meta, sin ruta, ya llegamos, etc) nos quedamos quietos
     if (!nextNode) {
       this.moving = false;
       return;
     }
 
-    // Validamos que sea un vecino directo (diferencia de 1 en x o z)
     const dx = nextNode.gridX - currentNode.gridX;
     const dz = nextNode.gridZ - currentNode.gridZ;
     const dist = Math.abs(dx) + Math.abs(dz);
     if (dist !== 1) {
-      // Algo raro en la ruta, mejor no moverse
       console.warn("[WalkerAgent] nextNode no es vecino directo:", currentNode, nextNode);
       this.moving = false;
       return;
     }
 
-    // Calculamos posiciones mundo sobre BANQUETA según el eje del movimiento
     const axis = Math.abs(dx) === 1 ? "horizontal" : "vertical";
 
-    const startPos = this._computeSidewalkPositionForAxis(currentNode, axis);
+    // 🔥 Inicio = donde está AHORITA el mono
+    const startPos = this.getWorldPosition(new THREE.Vector3());
+    // Fin = posición ideal en la banqueta para el nodo destino
     const endPos = this._computeSidewalkPositionForAxis(nextNode, axis);
 
     this.segmentStartPos.copy(startPos);
@@ -269,7 +267,6 @@ export class WalkerAgent {
     const angle = Math.atan2(dirVec.x, dirVec.z);
     this.object3D.rotation.y = angle;
 
-    // Duración basada en distancia y velocidad
     const distance = startPos.distanceTo(endPos);
     this.segmentDuration = distance / this.speed;
     this.segmentElapsed = 0;

@@ -15,9 +15,30 @@ document.addEventListener("DOMContentLoaded", () => {
   const engine = createEngine(container);
   const city = createCity(engine.scene);
 
+  // HUD simple para estado del muñequito
+  const statusEl = document.createElement("div");
+  statusEl.id = "agent-status";
+  statusEl.style.position = "absolute";
+  statusEl.style.left = "10px";
+  statusEl.style.bottom = "10px";
+  statusEl.style.padding = "8px 12px";
+  statusEl.style.background = "rgba(0,0,0,0.6)";
+  statusEl.style.borderRadius = "8px";
+  statusEl.style.fontFamily =
+    "system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+  statusEl.style.fontSize = "12px";
+  statusEl.style.color = "#fff";
+  statusEl.style.pointerEvents = "none";
+  statusEl.textContent = "Inicializando agente...";
+  container.appendChild(statusEl);
+
+  const updateStatus = (text) => {
+    statusEl.textContent = text;
+  };
+
   const initialState = {
     buildingHeightMultiplier: 1,
-    skyColor: "#5f9df3",     // 👈 SIN "ff"
+    skyColor: "#5f9df3", // sin alpha
     cityGlowIntensity: 0.7,
   };
 
@@ -25,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const agents = [];
 
-  // 🚗 Carrito sigue igual
+  // 🚗 Carrito
   const car = new CarAgent(city, engine.scene, { speed: 7 });
   agents.push(car);
 
@@ -38,36 +59,45 @@ document.addEventListener("DOMContentLoaded", () => {
     homePOI?.entranceRoad || { gridX: 9, gridZ: 7 }; // fallback por si acaso
 
   // 🚶 Muñequito con brain
-  const walker = new WalkerAgent(
-    city,
-    engine.scene,
-    walkerBrain,
-    {
-      speed: 2.2,
-      startRoad: walkerStartRoad,
-    }
-  );
+  const walker = new WalkerAgent(city, engine.scene, walkerBrain, {
+    speed: 2.2,
+    startRoad: walkerStartRoad,
+  });
   agents.push(walker);
 
-  // 🎯 Meta inicial: ir a la tienda
+  // 🎯 Estado de la misión
   let currentGoal = "shop";
+  let tripsToShop = 0;
+  let tripsToHome = 0;
+
   walker.setGoal(currentGoal);
+  updateStatus("Objetivo: ir a la tienda");
 
   engine.onUpdate((dt) => {
-    // actualizar todos los agentes
     agents.forEach((agent) => agent.update(dt));
 
-    // lógica de cambio de meta para el muñequito
     const poi = city.pointsOfInterest?.[currentGoal];
     if (poi && walker.isAtPOI(poi)) {
-      // cuando llega, alterna entre tienda y casa
-      currentGoal = currentGoal === "shop" ? "home" : "shop";
-      walker.setGoal(currentGoal);
+      if (currentGoal === "shop") {
+        tripsToShop += 1;
+        currentGoal = "home";
+        walker.setGoal(currentGoal);
+        updateStatus(
+          `Llegó a la tienda (${tripsToShop} veces). Nuevo objetivo: regresar a casa`
+        );
+      } else {
+        tripsToHome += 1;
+        currentGoal = "shop";
+        walker.setGoal(currentGoal);
+        updateStatus(
+          `Llegó a casa (${tripsToHome} veces). Nuevo objetivo: ir a la tienda`
+        );
+      }
     }
   });
 
   engine.start();
 
-  // Debug opcional en consola
+  // Debug opcional
   // window.__CITY3D__ = { engine, city, agents, walkerBrain };
 });
