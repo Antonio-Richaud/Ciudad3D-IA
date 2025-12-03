@@ -11,14 +11,14 @@ export class QLearningBrain {
   /**
    * @param {object} city - objeto ciudad
    * @param {object} options - hiperparámetros
-   *   { alpha, gamma, epsilon, epsilonMin, epsilonDecay, defaultGoalId }
+   *   { alpha, gamma, epsilon, epsilonMin, epsilonDecay, defaultGoalId, maxEpisodeStats }
    */
   constructor(city, options = {}) {
     this.city = city;
 
     this.alpha = options.alpha ?? 0.2;       // tasa de aprendizaje
     this.gamma = options.gamma ?? 0.95;      // factor de descuento
-    this.epsilon = options.epsilon ?? 0.3;   // prob. de explorar
+    this.epsilon = options.epsilon ?? 0.4;   // prob. de explorar
     this.epsilonMin = options.epsilonMin ?? 0.05;
     this.epsilonDecay = options.epsilonDecay ?? 0.995;
 
@@ -31,6 +31,11 @@ export class QLearningBrain {
     this.totalSteps = 0;
     this.episodeCount = 0;
     this.currentEpisodeReward = 0;
+    this.episodeSteps = 0;
+
+    // Historial para gráficas
+    this.episodeStats = []; // { episode, steps, totalReward, goalId }
+    this.maxEpisodeStats = options.maxEpisodeStats ?? 100;
   }
 
   // ===== Helpers internos =====
@@ -64,12 +69,13 @@ export class QLearningBrain {
 
   /**
    * Nuevo objetivo de alto nivel (home, shop, etc.).
-   * Lo tratamos como inicio de episodio nuevo.
+   * Lo tratamos como inicio de un nuevo episodio.
    */
   setGoal(goalId /*, startNode */) {
     this.currentGoalId = goalId || null;
     this.lastTransition = null;
     this.currentEpisodeReward = 0;
+    this.episodeSteps = 0;
   }
 
   /**
@@ -156,6 +162,7 @@ export class QLearningBrain {
     const isGoal = !!info.isGoal;
 
     this.currentEpisodeReward += reward;
+    this.episodeSteps += 1;
 
     const fromKey = this._nodeKey(trans.fromNode);
     const toKey = this._nodeKey(newNode);
@@ -187,20 +194,35 @@ export class QLearningBrain {
     const newQ = oldQ + this.alpha * (target - oldQ);
     this._setQ(goalId, fromKey, trans.action, newQ);
 
-    // Si terminó episodio (llegó a goal), actualizamos epsilon y stats
+    // Si terminó episodio (llegó a goal), guardamos stats y bajamos epsilon
     if (isGoal) {
       this.episodeCount += 1;
+
+      this.episodeStats.push({
+        episode: this.episodeCount,
+        steps: this.episodeSteps,
+        totalReward: this.currentEpisodeReward,
+        goalId,
+      });
+      if (this.episodeStats.length > this.maxEpisodeStats) {
+        this.episodeStats.shift();
+      }
+
+      // Decaer epsilon (menos exploración con el tiempo)
       this.epsilon = Math.max(
         this.epsilonMin,
         this.epsilon * this.epsilonDecay
       );
+
+      // Reset episodio
       this.lastTransition = null;
       this.currentEpisodeReward = 0;
+      this.episodeSteps = 0;
     }
   }
 
   /**
-   * Info útil para debug / overlays.
+   * Info útil para debug / overlays / gráficas.
    */
   getDebugInfo() {
     return {
@@ -211,6 +233,8 @@ export class QLearningBrain {
       episodes: this.episodeCount,
       totalSteps: this.totalSteps,
       lastTransition: this.lastTransition,
+      episodeSteps: this.episodeSteps,
+      episodeStats: this.episodeStats,
     };
   }
 }
