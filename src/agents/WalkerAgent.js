@@ -34,19 +34,35 @@ function createWalkerMesh() {
   head.position.y = 1.25;
   group.add(head);
 
-  // "Cara" marcada con un disco oscuro
-  const faceGeom = new THREE.CircleGeometry(0.18, 16);
-  const faceMat = new THREE.MeshStandardMaterial({
-    color: 0x222222,
-    roughness: 0.8,
+  // 👀 Ojitos (esferas pequeñas)
+  const eyeGeom = new THREE.SphereGeometry(0.03, 8, 8);
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: 0x000000,
+    roughness: 0.5,
     metalness: 0.0,
   });
-  const face = new THREE.Mesh(faceGeom, faceMat);
-  face.position.set(0, 1.25, 0.24);
-  face.rotation.y = Math.PI;
-  face.castShadow = false;
-  face.receiveShadow = false;
-  group.add(face);
+
+  const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
+  leftEye.position.set(-0.07, 1.30, 0.23);
+  leftEye.castShadow = false;
+  leftEye.receiveShadow = false;
+  group.add(leftEye);
+
+  const rightEye = leftEye.clone();
+  rightEye.position.x *= -1; // espejo en X
+  group.add(rightEye);
+
+  // 😄 Sonrisita (curva dibujada con Line)
+  const smileCurve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(-0.09, 1.20, 0.23),
+    new THREE.Vector3(0.0, 1.13, 0.25),
+    new THREE.Vector3(0.09, 1.20, 0.23)
+  );
+  const smilePoints = smileCurve.getPoints(20);
+  const smileGeom = new THREE.BufferGeometry().setFromPoints(smilePoints);
+  const smileMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+  const smile = new THREE.Line(smileGeom, smileMat);
+  group.add(smile);
 
   return group;
 }
