@@ -474,6 +474,14 @@ export function createCity(scene) {
           wx += cellSize * 0.90; // esto es lo que tú ya ajustaste
         }
 
+        // Ajuste especial para la casa: moverla un poquito hacia "atrás"
+        // (prueba con 0.25, si quieres más/menos, subes o bajas ese factor)
+        if (specialLot.id === "home") {
+          wz += cellSize * 0.10;
+          // Si sientes que se fue al lado contrario, cambia a -=
+          // wz -= cellSize * 0.25;
+        }
+
         createSpecialBuilding(specialLot, wx, wz, scene, buildings);
         // Banquetas ya se crearon arriba, aquí solo evitamos edificio/árboles
         continue;

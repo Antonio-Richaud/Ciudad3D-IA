@@ -2,243 +2,308 @@
 import * as THREE from "three";
 import { gridToWorld } from "../city/cityScene.js";
 
+/**
+ * Crea el modelo 3D del muñequito.
+ */
+function createWalkerMesh() {
+  const group = new THREE.Group();
+
+  // Cuerpo
+  const bodyGeom = new THREE.CapsuleGeometry(0.25, 0.7, 8, 16);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x2e86de,
+    roughness: 0.4,
+    metalness: 0.1,
+  });
+  const body = new THREE.Mesh(bodyGeom, bodyMat);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  body.position.y = 0.7;
+  group.add(body);
+
+  // Cabeza
+  const headGeom = new THREE.SphereGeometry(0.25, 16, 16);
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0xffe0bd,
+    roughness: 0.5,
+    metalness: 0.05,
+  });
+  const head = new THREE.Mesh(headGeom, headMat);
+  head.castShadow = true;
+  head.receiveShadow = true;
+  head.position.y = 1.25;
+  group.add(head);
+
+  // "Cara" marcada con un disco oscuro
+  const faceGeom = new THREE.CircleGeometry(0.18, 16);
+  const faceMat = new THREE.MeshStandardMaterial({
+    color: 0x222222,
+    roughness: 0.8,
+    metalness: 0.0,
+  });
+  const face = new THREE.Mesh(faceGeom, faceMat);
+  face.position.set(0, 1.25, 0.24);
+  face.rotation.y = Math.PI;
+  face.castShadow = false;
+  face.receiveShadow = false;
+  group.add(face);
+
+  return group;
+}
+
+/**
+ * WalkerAgent:
+ * - Se mueve sobre banquetas alrededor de las calles.
+ * - Usa un "brain" (ShortestPathBrain, luego QLearningBrain, etc.)
+ *   para decidir el siguiente nodo de calle al que moverse.
+ */
 export class WalkerAgent {
-  constructor(city, scene, options = {}) {
+  /**
+   * @param {object} city  - objeto retornado por createCity(scene)
+   * @param {THREE.Scene} scene
+   * @param {object|null} brain - objeto con método chooseNextRoad(currentNode)
+   * @param {object} options - { startRoad?: {gridX,gridZ}, speed?: number }
+   */
+  constructor(city, scene, brain, options = {}) {
     this.city = city;
     this.scene = scene;
-    this.speed = options.speed ?? 2.4;
+    this.brain = brain || null;
 
-    // side = 1 o -1 → lado de la calle donde camina
-    this.side = options.side ?? (Math.random() < 0.5 ? 1 : -1);
+    // Nodo de calle actual (grid)
+    this.currentRoadNode =
+      options.startRoad ||
+      this._findDefaultStartRoadNode() || { gridX: 0, gridZ: 0 };
 
-    // offset calculado en la ciudad para coincidir con la banqueta
-    this.offsetAmount =
-      city.sidewalkOffset ?? city.cellSize * 0.35;
+    // Nodo destino de este segmento (grid)
+    this.targetRoadNode = null;
 
-    this.height = 1.0;
+    // Movimiento
+    this.speed = options.speed || 3; // unidades mundo / segundo
+    this.segmentDuration = 1.0;      // se ajusta en cada segmento según cellSize
+    this.segmentElapsed = 0;
+    this.moving = false;
 
-    const roads = city.roads;
-    if (!roads || roads.length === 0) {
-      throw new Error("WalkerAgent: no hay calles en la ciudad");
-    }
+    // Posiciones mundo para interpolar
+    this.segmentStartPos = new THREE.Vector3();
+    this.segmentEndPos = new THREE.Vector3();
 
-    const startRoad =
-      roads[Math.floor(Math.random() * roads.length)];
+    // Altura base del muñequito
+    this.baseY = 0.25;
 
-    this.gridX = startRoad.gridX;
-    this.gridZ = startRoad.gridZ;
+    // Offset desde el centro de la calle hacia la banqueta
+    this.sidewalkOffset =
+      this.city.sidewalkOffset ||
+      this.city.cellSize / 2 + (this.city.sidewalkWidth || 1) / 2 - 0.02;
 
-    // Dirección inicial inventada para poder calcular el primer offset
-    this.prevGridX = this.gridX;
-    this.prevGridZ = this.gridZ - 1;
+    // Crear modelo 3D
+    this.object3D = createWalkerMesh();
+    this.scene.add(this.object3D);
 
-    const dx0 = this.gridX - this.prevGridX;
-    const dz0 = this.gridZ - this.prevGridZ;
-
-    const startPos = this.#computeSidewalkPosition(
-      this.gridX,
-      this.gridZ,
-      dx0,
-      dz0
+    // Colocarlo en su calle inicial (con un eje arbitrario, luego se corrige al primer movimiento)
+    const initialWorld = gridToWorld(
+      this.city,
+      this.currentRoadNode.gridX,
+      this.currentRoadNode.gridZ,
+      this.baseY
     );
-    this.position = startPos.clone();
-
-    this.targetPos = null;
-    this.nextGridX = null;
-    this.nextGridZ = null;
-
-    this.mesh = this.#createMesh();
-    this.mesh.position.copy(this.position);
-    this.scene.add(this.mesh);
+    // Lo ponemos sobre la banqueta "norte" por default
+    this.object3D.position.set(
+      initialWorld.x,
+      this.baseY,
+      initialWorld.z - this.sidewalkOffset
+    );
+    this.object3D.rotation.y = Math.PI; // mirando hacia "abajo" por default
   }
 
-  #createMesh() {
-    const group = new THREE.Group();
-
-    const bodyHeight = 1.1;
-    const bodyRadius = 0.22;
-    const headRadius = 0.28;
-
-    const bodyGeom = new THREE.CylinderGeometry(
-      bodyRadius,
-      bodyRadius * 1.05,
-      bodyHeight,
-      10
-    );
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x4b8efc,
-      roughness: 0.45,
-      metalness: 0.1,
-    });
-    const body = new THREE.Mesh(bodyGeom, bodyMat);
-    body.castShadow = true;
-    body.receiveShadow = true;
-    body.position.y = bodyHeight / 2;
-    group.add(body);
-
-    const headGeom = new THREE.SphereGeometry(headRadius, 16, 16);
-    const headMat = new THREE.MeshStandardMaterial({
-      color: 0xffe0c2,
-      roughness: 0.7,
-      metalness: 0.05,
-    });
-    const head = new THREE.Mesh(headGeom, headMat);
-    head.castShadow = true;
-    head.receiveShadow = true;
-    head.position.y = bodyHeight + headRadius * 0.95;
-    group.add(head);
-
-    return group;
+  /**
+   * Si no se especifica startRoad, tratamos de usar la entrada de la casa.
+   */
+  _findDefaultStartRoadNode() {
+    const poiHome = this.city.pointsOfInterest?.home;
+    if (poiHome?.entranceRoad) {
+      return {
+        gridX: poiHome.entranceRoad.gridX,
+        gridZ: poiHome.entranceRoad.gridZ,
+      };
+    }
+    // fallback tonto: busca alguna calle del centro
+    const mid = Math.floor(this.city.gridSize / 2);
+    return { gridX: mid, gridZ: mid };
   }
 
-  #computeSidewalkPosition(gridX, gridZ, dirX, dirZ) {
-    const center = gridToWorld(this.city, gridX, gridZ, 0);
+  /**
+   * Setear objetivo de alto nivel (home, shop, etc).
+   * Esto delega en el brain, que recalcula la ruta desde donde esté.
+   */
+  setGoal(goalId) {
+    if (!this.brain) return;
+    const start = this.getCurrentRoadNode();
+    this.brain.setGoal(goalId, start);
+    this.moving = false;
+    this.targetRoadNode = null;
+    this.segmentElapsed = 0;
+  }
 
-    let offsetX = 0;
-    let offsetZ = 0;
+  /**
+   * Devuelve el nodo de calle actual.
+   */
+  getCurrentRoadNode() {
+    return {
+      gridX: this.currentRoadNode.gridX,
+      gridZ: this.currentRoadNode.gridZ,
+    };
+  }
 
-    if (dirX !== 0) {
-      // avanzando a lo largo de X → desplazamos en Z hacia la banqueta
-      offsetZ = this.side * this.offsetAmount;
-    } else if (dirZ !== 0) {
-      // avanzando a lo largo de Z → desplazamos en X
-      offsetX = this.side * this.offsetAmount;
-    } else {
-      // sin dirección clara, aplica offset fijo en X
-      offsetX = this.side * this.offsetAmount;
-    }
+  /**
+   * Devuelve la posición mundo actual del muñequito.
+   */
+  getWorldPosition(target = new THREE.Vector3()) {
+    return target.copy(this.object3D.position);
+  }
 
-    return new THREE.Vector3(
-      center.x + offsetX,
-      this.height,
-      center.z + offsetZ
+  /**
+   * Devuelve true si el walker está exactamente en el nodo de calle dado.
+   */
+  isAtRoadNode(node) {
+    if (!node) return false;
+    return (
+      this.currentRoadNode.gridX === node.gridX &&
+      this.currentRoadNode.gridZ === node.gridZ
     );
   }
 
-  #getNeighbors() {
-    const { roadMap } = this.city;
-    const deltas = [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ];
-
-    const neighbors = [];
-
-    for (const [dx, dz] of deltas) {
-      const nx = this.gridX + dx;
-      const nz = this.gridZ + dz;
-      const key = `${nx},${nz}`;
-      const road = roadMap.get(key);
-      if (road) {
-        neighbors.push(road);
-      }
-    }
-
-    return neighbors;
+  /**
+   * Útil para lógica externa: verificar si llegó a un POI.
+   */
+  isAtPOI(poi) {
+    if (!poi?.entranceRoad) return false;
+    return this.isAtRoadNode(poi.entranceRoad);
   }
 
-  #pickNextTarget() {
-    const neighbors = this.#getNeighbors();
-
-    if (neighbors.length === 0) {
-      this.targetPos = null;
-      return;
-    }
-
-    let candidates = neighbors;
-
-    if (neighbors.length > 1) {
-      const filtered = neighbors.filter(
-        (r) =>
-          !(
-            r.gridX === this.prevGridX &&
-            r.gridZ === this.prevGridZ
-          )
-      );
-      if (filtered.length > 0) {
-        candidates = filtered;
-      }
-    }
-
-    const next =
-      candidates[Math.floor(Math.random() * candidates.length)];
-
-    const dx = next.gridX - this.gridX;
-    const dz = next.gridZ - this.gridZ;
-
-    const startPos = this.#computeSidewalkPosition(
-      this.gridX,
-      this.gridZ,
-      dx,
-      dz
-    );
-    const targetPos = this.#computeSidewalkPosition(
-      next.gridX,
-      next.gridZ,
-      dx,
-      dz
-    );
-
-    this.position.copy(startPos);
-
-    this.nextGridX = next.gridX;
-    this.nextGridZ = next.gridZ;
-    this.targetPos = targetPos;
-  }
-
+  /**
+   * Update por frame.
+   * @param {number} dt - delta time en segundos
+   */
   update(dt) {
-    if (!this.targetPos) {
-      this.#pickNextTarget();
-      return;
+    if (!this.moving) {
+      this._startNextSegment();
     }
 
-    const dir = new THREE.Vector3().subVectors(
-      this.targetPos,
-      this.position
-    );
-    const dist = dir.length();
+    if (this.moving) {
+      this.segmentElapsed += dt;
+      let t = this.segmentElapsed / this.segmentDuration;
+      if (t >= 1) {
+        t = 1;
+      }
 
-    if (dist < 0.01) {
-      this.prevGridX = this.gridX;
-      this.prevGridZ = this.gridZ;
-      this.gridX = this.nextGridX;
-      this.gridZ = this.nextGridZ;
-
-      this.position.copy(this.targetPos);
-      this.targetPos = null;
-      this.#pickNextTarget();
-      return;
-    }
-
-    dir.normalize();
-    const step = this.speed * dt;
-
-    if (step >= dist) {
-      this.position.copy(this.targetPos);
-      this.prevGridX = this.gridX;
-      this.prevGridZ = this.gridZ;
-      this.gridX = this.nextGridX;
-      this.gridZ = this.nextGridZ;
-      this.targetPos = null;
-      this.#pickNextTarget();
-    } else {
-      this.position.addScaledVector(dir, step);
-    }
-
-    this.mesh.position.copy(this.position);
-
-    if (this.targetPos) {
-      const lookDir = new THREE.Vector3().subVectors(
-        this.targetPos,
-        this.position
+      // Interpolamos posición
+      this.object3D.position.lerpVectors(
+        this.segmentStartPos,
+        this.segmentEndPos,
+        t
       );
-      if (lookDir.lengthSq() > 0.0001) {
-        lookDir.normalize();
-        const angle = Math.atan2(lookDir.x, lookDir.z);
-        this.mesh.rotation.y = angle;
+
+      // Pequeño bob de caminata
+      const bob = Math.sin(t * Math.PI * 2) * 0.03;
+      this.object3D.position.y = this.segmentStartPos.y + bob;
+
+      if (t >= 1) {
+        // Llegamos al nodo destino
+        this.currentRoadNode = { ...this.targetRoadNode };
+        this.moving = false;
+        this.segmentElapsed = 0;
+        this.targetRoadNode = null;
+
+        // Piso estable
+        this.object3D.position.y = this.segmentEndPos.y;
       }
     }
+  }
+
+  /**
+   * Inicia un nuevo segmento de movimiento pidiéndole al brain
+   * el siguiente nodo de calle. Si no hay brain, usa vecinos random.
+   */
+  _startNextSegment() {
+    const currentNode = this.getCurrentRoadNode();
+
+    // Preguntamos al brain
+    let nextNode = null;
+    if (this.brain) {
+      nextNode = this.brain.chooseNextRoad(currentNode);
+    }
+
+    // Si el brain no da nada (sin meta, sin ruta, ya llegamos, etc) nos quedamos quietos
+    if (!nextNode) {
+      this.moving = false;
+      return;
+    }
+
+    // Validamos que sea un vecino directo (diferencia de 1 en x o z)
+    const dx = nextNode.gridX - currentNode.gridX;
+    const dz = nextNode.gridZ - currentNode.gridZ;
+    const dist = Math.abs(dx) + Math.abs(dz);
+    if (dist !== 1) {
+      // Algo raro en la ruta, mejor no moverse
+      console.warn("[WalkerAgent] nextNode no es vecino directo:", currentNode, nextNode);
+      this.moving = false;
+      return;
+    }
+
+    // Calculamos posiciones mundo sobre BANQUETA según el eje del movimiento
+    const axis = Math.abs(dx) === 1 ? "horizontal" : "vertical";
+
+    const startPos = this._computeSidewalkPositionForAxis(currentNode, axis);
+    const endPos = this._computeSidewalkPositionForAxis(nextNode, axis);
+
+    this.segmentStartPos.copy(startPos);
+    this.segmentEndPos.copy(endPos);
+
+    // Orientar al muñequito hacia la dirección del movimiento
+    const dirVec = new THREE.Vector3(
+      endPos.x - startPos.x,
+      0,
+      endPos.z - startPos.z
+    );
+    dirVec.normalize();
+    const angle = Math.atan2(dirVec.x, dirVec.z);
+    this.object3D.rotation.y = angle;
+
+    // Duración basada en distancia y velocidad
+    const distance = startPos.distanceTo(endPos);
+    this.segmentDuration = distance / this.speed;
+    this.segmentElapsed = 0;
+    this.moving = true;
+
+    this.targetRoadNode = { ...nextNode };
+  }
+
+  /**
+   * Dado un nodo de calle y el eje de movimiento (horizontal/vertical),
+   * devolvemos la posición mundo donde debería pisar el muñequito en la banqueta.
+   *
+   * Convención:
+   * - Movimiento horizontal (este/oeste) -> banqueta del lado "norte" (z-)
+   * - Movimiento vertical (norte/sur)    -> banqueta del lado "este"  (x+)
+   */
+  _computeSidewalkPositionForAxis(node, axis) {
+    const base = gridToWorld(
+      this.city,
+      node.gridX,
+      node.gridZ,
+      this.baseY
+    );
+
+    const pos = new THREE.Vector3(base.x, this.baseY, base.z);
+
+    if (axis === "horizontal") {
+      // banqueta al norte de la calle
+      pos.z -= this.sidewalkOffset;
+    } else {
+      // eje vertical -> banqueta al este de la calle
+      pos.x += this.sidewalkOffset;
+    }
+
+    return pos;
   }
 }
