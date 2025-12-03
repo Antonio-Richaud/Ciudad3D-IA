@@ -43,7 +43,7 @@ function createWalkerMesh() {
   });
 
   const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
-  leftEye.position.set(-0.07, 1.30, 0.23);
+  leftEye.position.set(-0.07, 1.3, 0.23);
   leftEye.castShadow = false;
   leftEye.receiveShadow = false;
   group.add(leftEye);
@@ -54,9 +54,9 @@ function createWalkerMesh() {
 
   // 😄 Sonrisita (curva dibujada con Line)
   const smileCurve = new THREE.QuadraticBezierCurve3(
-    new THREE.Vector3(-0.09, 1.20, 0.23),
+    new THREE.Vector3(-0.09, 1.2, 0.23),
     new THREE.Vector3(0.0, 1.13, 0.25),
-    new THREE.Vector3(0.09, 1.20, 0.23)
+    new THREE.Vector3(0.09, 1.2, 0.23)
   );
   const smilePoints = smileCurve.getPoints(20);
   const smileGeom = new THREE.BufferGeometry().setFromPoints(smilePoints);
@@ -70,7 +70,7 @@ function createWalkerMesh() {
 /**
  * WalkerAgent:
  * - Se mueve sobre banquetas alrededor de las calles.
- * - Usa un "brain" (ShortestPathBrain, luego QLearningBrain, etc.)
+ * - Usa un "brain" (ShortestPathBrain, QLearningBrain, etc.)
  *   para decidir el siguiente nodo de calle al que moverse.
  */
 export class WalkerAgent {
@@ -95,7 +95,7 @@ export class WalkerAgent {
 
     // Movimiento
     this.speed = options.speed || 3; // unidades mundo / segundo
-    this.segmentDuration = 1.0;      // se ajusta en cada segmento según cellSize
+    this.segmentDuration = 1.0; // se ajusta en cada segmento según distancia
     this.segmentElapsed = 0;
     this.moving = false;
 
@@ -105,6 +105,9 @@ export class WalkerAgent {
 
     // Altura base del muñequito
     this.baseY = 0.25;
+
+    // Objetivo actual ("home", "shop"...)
+    this.currentGoalId = null;
 
     // Offset desde el centro de la calle hacia la banqueta
     this.sidewalkOffset =
@@ -122,13 +125,8 @@ export class WalkerAgent {
       this.currentRoadNode.gridZ,
       this.baseY
     );
-    // Lo ponemos sobre la banqueta "norte" por default
-    this.object3D.position.set(
-      initialWorld.x,
-      this.baseY,
-      initialWorld.z - this.sidewalkOffset
-    );
-    this.object3D.rotation.y = Math.PI; // mirando hacia "abajo" por default
+    this.object3D.position.set(initialWorld.x, this.baseY, initialWorld.z);
+    this.object3D.rotation.y = Math.PI; // orientación inicial cualquiera
   }
 
   /**
@@ -142,19 +140,23 @@ export class WalkerAgent {
         gridZ: poiHome.entranceRoad.gridZ,
       };
     }
-    // fallback tonto: busca alguna calle del centro
+    // fallback simple: alguna calle del centro
     const mid = Math.floor(this.city.gridSize / 2);
     return { gridX: mid, gridZ: mid };
   }
 
   /**
    * Setear objetivo de alto nivel (home, shop, etc).
-   * Esto delega en el brain, que recalcula la ruta desde donde esté.
+   * Esto delega en el brain, que recalcula la política/plan desde donde esté.
    */
   setGoal(goalId) {
-    if (!this.brain) return;
-    const start = this.getCurrentRoadNode();
-    this.brain.setGoal(goalId, start);
+    this.currentGoalId = goalId || null;
+
+    if (this.brain && typeof this.brain.setGoal === "function") {
+      const start = this.getCurrentRoadNode();
+      this.brain.setGoal(goalId, start);
+    }
+
     this.moving = false;
     this.targetRoadNode = null;
     this.segmentElapsed = 0;
@@ -205,47 +207,74 @@ export class WalkerAgent {
       this._startNextSegment();
     }
 
-    if (this.moving) {
-      this.segmentElapsed += dt;
-      let t = this.segmentElapsed / this.segmentDuration;
-      if (t >= 1) {
-        t = 1;
-      }
+    if (!this.moving) return;
 
-      // Interpolamos posición
-      this.object3D.position.lerpVectors(
-        this.segmentStartPos,
-        this.segmentEndPos,
-        t
-      );
+    this.segmentElapsed += dt;
+    let t = this.segmentElapsed / this.segmentDuration;
+    if (t >= 1) t = 1;
 
-      // Pequeño bob de caminata
-      const bob = Math.sin(t * Math.PI * 2) * 0.03;
-      this.object3D.position.y = this.segmentStartPos.y + bob;
+    // Interpolamos posición
+    this.object3D.position.lerpVectors(
+      this.segmentStartPos,
+      this.segmentEndPos,
+      t
+    );
 
-      if (t >= 1) {
-        // Llegamos al nodo destino
-        this.currentRoadNode = { ...this.targetRoadNode };
-        this.moving = false;
-        this.segmentElapsed = 0;
-        this.targetRoadNode = null;
+    // Pequeño bob de caminata
+    const bob = Math.sin(t * Math.PI * 2) * 0.03;
+    this.object3D.position.y = this.segmentStartPos.y + bob;
 
-        // Piso estable
-        this.object3D.position.y = this.segmentEndPos.y;
+    if (t >= 1) {
+      // Llegamos al nodo destino
+      const prevNode = { ...this.currentRoadNode };
+      this.currentRoadNode = { ...this.targetRoadNode };
+
+      this.moving = false;
+      this.segmentElapsed = 0;
+      this.targetRoadNode = null;
+
+      // Piso estable
+      this.object3D.position.y = this.segmentEndPos.y;
+
+      // 🔥 Hook de aprendizaje: avisar al brain (si lo soporta)
+      if (this.brain && typeof this.brain.onNodeArrived === "function") {
+        const goalId = this.currentGoalId;
+        const poi =
+          goalId && this.city.pointsOfInterest
+            ? this.city.pointsOfInterest[goalId]
+            : null;
+
+        let isGoal = false;
+        if (poi?.entranceRoad) {
+          isGoal =
+            this.currentRoadNode.gridX === poi.entranceRoad.gridX &&
+            this.currentRoadNode.gridZ === poi.entranceRoad.gridZ;
+        }
+
+        // Reward sencillo:
+        // - paso normal: -0.05
+        // - llegar al objetivo: +1.0
+        const reward = isGoal ? 1.0 : -0.05;
+
+        this.brain.onNodeArrived(prevNode, this.currentRoadNode, {
+          goalId,
+          isGoal,
+          reward,
+        });
       }
     }
   }
 
   /**
    * Inicia un nuevo segmento de movimiento pidiéndole al brain
-   * el siguiente nodo de calle. Si no hay brain, usa vecinos random.
+   * el siguiente nodo de calle. Si no hay brain, se queda quieto.
    */
   _startNextSegment() {
     const currentNode = this.getCurrentRoadNode();
 
     // Preguntamos al brain
     let nextNode = null;
-    if (this.brain) {
+    if (this.brain && typeof this.brain.chooseNextRoad === "function") {
       nextNode = this.brain.chooseNextRoad(currentNode);
     }
 
@@ -258,14 +287,18 @@ export class WalkerAgent {
     const dz = nextNode.gridZ - currentNode.gridZ;
     const dist = Math.abs(dx) + Math.abs(dz);
     if (dist !== 1) {
-      console.warn("[WalkerAgent] nextNode no es vecino directo:", currentNode, nextNode);
+      console.warn(
+        "[WalkerAgent] nextNode no es vecino directo:",
+        currentNode,
+        nextNode
+      );
       this.moving = false;
       return;
     }
 
     const axis = Math.abs(dx) === 1 ? "horizontal" : "vertical";
 
-    // 🔥 Inicio = donde está AHORITA el mono
+    // Inicio = donde está AHORITA el mono
     const startPos = this.getWorldPosition(new THREE.Vector3());
     // Fin = posición ideal en la banqueta para el nodo destino
     const endPos = this._computeSidewalkPositionForAxis(nextNode, axis);
