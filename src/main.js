@@ -3,7 +3,7 @@ import { createEngine } from "./core/engine.js";
 import { createCity, applyCityState } from "./city/cityScene.js";
 import { CarAgent } from "./agents/CarAgent.js";
 import { WalkerAgent } from "./agents/WalkerAgent.js";
-import { ShortestPathBrain } from "./agents/brains/ShortestPathBrain.js";
+import { QLearningBrain } from "./agents/brains/QLearningBrain.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("app");
@@ -51,7 +51,14 @@ document.addEventListener("DOMContentLoaded", () => {
   agents.push(car);
 
   // 🧠 Cerebro del muñequito (ruta más corta)
-  const walkerBrain = new ShortestPathBrain(city);
+  // const walkerBrain = new ShortestPathBrain(city);
+  const walkerBrain = new QLearningBrain(city, {
+    alpha: 0.2,
+    gamma: 0.95,
+    epsilon: 0.4,
+    epsilonMin: 0.05,
+    epsilonDecay: 0.995,
+  });
 
   // Nodo inicial del muñequito: entrada de la casa (si existe)
   const homePOI = city.pointsOfInterest?.home;
