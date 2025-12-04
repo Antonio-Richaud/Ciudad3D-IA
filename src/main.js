@@ -171,7 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
   walker.setGoal(currentGoal);
   updateStatus("Objetivo: ir a la tienda");
 
-  const SIM_SPEED = 20; // 1 = tiempo real, 4 = 4x más rápido (ajusta al gusto)
+  const SIM_SPEED = 50; // 1 = tiempo real, 4 = 4x más rápido (ajusta al gusto)
 
   engine.onUpdate((dt) => {
     const scaledDt = dt * SIM_SPEED;
@@ -185,14 +185,14 @@ document.addEventListener("DOMContentLoaded", () => {
         currentGoal = "home";
         walker.setGoal(currentGoal);
         updateStatus(
-          `Llegó a la tienda 🏪 (${tripsToShop} veces). Nuevo objetivo: regresar a casa 🏠`
+          `Llegó a la tienda (${tripsToShop} veces). Nuevo objetivo: regresar a casa`
         );
       } else {
         tripsToHome += 1;
         currentGoal = "shop";
         walker.setGoal(currentGoal);
         updateStatus(
-          `Llegó a casa 🏠 (${tripsToHome} veces). Nuevo objetivo: ir a la tienda 🏪`
+          `Llegó a casa (${tripsToHome} veces). Nuevo objetivo: ir a la tienda`
         );
       }
     }
