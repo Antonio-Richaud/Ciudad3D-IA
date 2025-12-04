@@ -21,7 +21,8 @@ const SPECIAL_LOTS = [
     label: "Casa",
     modelUrl: HOUSE_MODEL_URL,
     buildingCell: { gridX: 4, gridZ: 7 },
-    entranceRoad: { gridX: 3, gridZ: 7 },
+    // Antes: { gridX: 3, gridZ: 7 }
+    entranceRoad: { gridX: 3, gridZ: 8 },   // 👉 coincide con círculo morado
     scale: 1.2,
     rotationY: Math.PI / 2,
     capacity: 4,
@@ -31,13 +32,12 @@ const SPECIAL_LOTS = [
     label: "Tienda",
     modelUrl: SHOP_MODEL_URL,
     buildingCell: { gridX: 10, gridZ: 7 },
-    entranceRoad: { gridX: 9, gridZ: 7 },
-    scale: 0.65,
+    // Antes: { gridX: 9, gridZ: 7 }
+    entranceRoad: { gridX: 9, gridZ: 8 },   // 👉 coincide con círculo morado
+    scale: 0.75,
     rotationY: Math.PI,
     capacity: 10,
-    extraCells: [
-      { gridX: 11, gridZ: 7 },
-    ],
+    extraCells: [{ gridX: 11, gridZ: 7 }],
   },
 ];
 
