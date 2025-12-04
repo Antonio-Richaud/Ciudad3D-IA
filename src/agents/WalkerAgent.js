@@ -251,10 +251,10 @@ export class WalkerAgent {
             this.currentRoadNode.gridZ === poi.entranceRoad.gridZ;
         }
 
-        // Reward sencillo:
-        // - paso normal: -0.05
-        // - llegar al objetivo: +1.0
-        const reward = isGoal ? 1.0 : -0.05;
+        // Reward más fuerte:
+        // - cada paso: castigo moderado
+        // - llegar a la meta: recompensa grande
+        const reward = isGoal ? 5.0 : -0.1;
 
         this.brain.onNodeArrived(prevNode, this.currentRoadNode, {
           goalId,

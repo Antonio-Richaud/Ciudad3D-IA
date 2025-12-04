@@ -137,13 +137,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 🧠 Cerebro del muñequito (Q-Learning)
   const walkerBrain = new QLearningBrain(city, {
-    alpha: 0.25,
-    gamma: 0.95,
-    epsilon: 0.4,
-    epsilonMin: 0.05,
-    epsilonDecay: 0.995,
+    alpha: 0.4,
+    gamma: 0.9,
+    epsilon: 0.3,
+    epsilonMin: 0.02,
+    epsilonDecay: 0.99,
     maxEpisodeStats: 80,
-    maxEpisodeSteps: 120, 
+    maxEpisodeSteps: 60,
   });
 
   // Nodo inicial del muñequito: entrada de la casa (si existe)
@@ -171,7 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
   walker.setGoal(currentGoal);
   updateStatus("Objetivo: ir a la tienda");
 
-  const SIM_SPEED = 50; // 1 = tiempo real, 4 = 4x más rápido (ajusta al gusto)
+  const SIM_SPEED = 10; // 1 = tiempo real, 4 = 4x más rápido (ajusta al gusto)
 
   engine.onUpdate((dt) => {
     const scaledDt = dt * SIM_SPEED;

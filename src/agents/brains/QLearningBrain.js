@@ -11,33 +11,43 @@ export class QLearningBrain {
     /**
      * @param {object} city - objeto ciudad
      * @param {object} options - hiperparámetros
-     *   { alpha, gamma, epsilon, epsilonMin, epsilonDecay, defaultGoalId, maxEpisodeStats }
+     *   {
+     *     alpha, gamma,
+     *     epsilon, epsilonMin, epsilonDecay,
+     *     defaultGoalId,
+     *     maxEpisodeStats,
+     *     maxEpisodeSteps
+     *   }
      */
     constructor(city, options = {}) {
         this.city = city;
 
-        this.alpha = options.alpha ?? 0.2;
-        this.gamma = options.gamma ?? 0.95;
-        this.epsilon = options.epsilon ?? 0.4;
-        this.epsilonMin = options.epsilonMin ?? 0.05;
-        this.epsilonDecay = options.epsilonDecay ?? 0.995;
+        this.alpha = options.alpha ?? 0.4;       // más agresivo
+        this.gamma = options.gamma ?? 0.9;       // un poco menos “codicioso” a futuro
+        this.epsilon = options.epsilon ?? 0.3;   // algo de exploración
+        this.epsilonMin = options.epsilonMin ?? 0.02;
+        this.epsilonDecay = options.epsilonDecay ?? 0.99;
 
         this.currentGoalId = options.defaultGoalId || null;
 
+        // Q[goalId][nodeKey][action] = valor
         this.Q = Object.create(null);
 
-        this.lastTransition = null;
+        this.lastTransition = null; // { goalId, fromNode, toNode, action }
         this.totalSteps = 0;
         this.episodeCount = 0;
         this.currentEpisodeReward = 0;
         this.episodeSteps = 0;
 
         // Historial para gráficas
-        this.episodeStats = [];
+        this.episodeStats = []; // { episode, steps, totalReward, goalId, timeout }
         this.maxEpisodeStats = options.maxEpisodeStats ?? 100;
 
-        // 🔥 NUEVO: máximo de pasos antes de cortar el episodio
-        this.maxEpisodeSteps = options.maxEpisodeSteps ?? 150;
+        // Máximo de pasos por episodio antes de cortarlo
+        this.maxEpisodeSteps = options.maxEpisodeSteps ?? 60;
+
+        // Para penalizar vueltas: cuántas veces se ha visitado cada nodo en el episodio
+        this.visitedThisEpisode = new Map();
     }
 
     // ===== Helpers internos =====
@@ -67,6 +77,14 @@ export class QLearningBrain {
         state[action] = value;
     }
 
+    _startNewEpisode(goalId) {
+        this.currentGoalId = goalId || this.currentGoalId || null;
+        this.lastTransition = null;
+        this.currentEpisodeReward = 0;
+        this.episodeSteps = 0;
+        this.visitedThisEpisode.clear();
+    }
+
     // ===== API esperada por WalkerAgent =====
 
     /**
@@ -74,10 +92,7 @@ export class QLearningBrain {
      * Lo tratamos como inicio de un nuevo episodio.
      */
     setGoal(goalId /*, startNode */) {
-        this.currentGoalId = goalId || null;
-        this.lastTransition = null;
-        this.currentEpisodeReward = 0;
-        this.episodeSteps = 0;
+        this._startNewEpisode(goalId);
     }
 
     /**
@@ -159,19 +174,55 @@ export class QLearningBrain {
             trans.goalId ||
             this.currentGoalId ||
             "none";
-        const reward =
+
+        const baseReward =
             typeof info.reward === "number" ? info.reward : 0;
         const isGoal = !!info.isGoal;
+
+        // Penalizar revisitar nodos en el mismo episodio (para evitar vueltas)
+        const nodeKeyNew = this._nodeKey(newNode);
+        const prevCount = this.visitedThisEpisode.get(nodeKeyNew) ?? 0;
+        this.visitedThisEpisode.set(nodeKeyNew, prevCount + 1);
+
+        let extraLoopPenalty = 0;
+        if (prevCount >= 1) {
+            // Ya visitamos antes este nodo en este episodio → penaliza fuerte
+            extraLoopPenalty = -0.5;
+        }
+
+        const reward = baseReward + extraLoopPenalty;
 
         this.currentEpisodeReward += reward;
         this.episodeSteps += 1;
 
         const fromKey = this._nodeKey(trans.fromNode);
-        const toKey = this._nodeKey(newNode);
 
         const oldQ = this._getQ(goalId, fromKey, trans.action);
 
         let target;
+
+        if (isGoal) {
+            // Si se llegó al objetivo, no hay futuro
+            target = reward;
+        } else {
+            // Valor futuro máximo desde el nuevo estado
+            const neighbors = getNeighbors(this.city, newNode);
+            let maxFuture = 0;
+            if (neighbors && neighbors.length > 0) {
+                let best = -Infinity;
+                for (const n of neighbors) {
+                    const v = this._getQ(goalId, nodeKeyNew, n.dir);
+                    if (v > best) best = v;
+                }
+                if (best !== -Infinity) {
+                    maxFuture = best;
+                }
+            }
+            target = reward + this.gamma * maxFuture;
+        }
+
+        const newQ = oldQ + this.alpha * (target - oldQ);
+        this._setQ(goalId, fromKey, trans.action, newQ);
 
         // Timeout por episodio demasiado largo
         const timeout =
@@ -194,33 +245,6 @@ export class QLearningBrain {
                 this.episodeStats.shift();
             }
 
-            this.epsilon = Math.max(
-                this.epsilonMin,
-                this.epsilon * this.epsilonDecay
-            );
-
-            this.lastTransition = null;
-            this.currentEpisodeReward = 0;
-            this.episodeSteps = 0;
-        }
-
-        const newQ = oldQ + this.alpha * (target - oldQ);
-        this._setQ(goalId, fromKey, trans.action, newQ);
-
-        // Si terminó episodio (llegó a goal), guardamos stats y bajamos epsilon
-        if (isGoal) {
-            this.episodeCount += 1;
-
-            this.episodeStats.push({
-                episode: this.episodeCount,
-                steps: this.episodeSteps,
-                totalReward: this.currentEpisodeReward,
-                goalId,
-            });
-            if (this.episodeStats.length > this.maxEpisodeStats) {
-                this.episodeStats.shift();
-            }
-
             // Decaer epsilon (menos exploración con el tiempo)
             this.epsilon = Math.max(
                 this.epsilonMin,
@@ -228,9 +252,7 @@ export class QLearningBrain {
             );
 
             // Reset episodio
-            this.lastTransition = null;
-            this.currentEpisodeReward = 0;
-            this.episodeSteps = 0;
+            this._startNewEpisode(this.currentGoalId);
         }
     }
 
