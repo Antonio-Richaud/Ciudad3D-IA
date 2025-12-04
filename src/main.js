@@ -219,7 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let tripsToHome = 0;
 
   walker.setGoal(currentGoal);
-  updateStatus("Objetivo: ir a la tienda 🏪");
+  updateStatus("Objetivo: ir a la tienda");
 
   // ============= Raycaster para hover sobre el agente =============
   const raycaster = new THREE.Raycaster();
@@ -275,7 +275,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ============= Loop principal =============
-  const SIM_SPEED = 20; // acelera la simulación
+  const SIM_SPEED = 1; // acelera la simulación
 
   engine.onUpdate((dt) => {
     const scaledDt = dt * SIM_SPEED;
@@ -290,14 +290,14 @@ document.addEventListener("DOMContentLoaded", () => {
         currentGoal = "home";
         walker.setGoal(currentGoal);
         updateStatus(
-          `Llegó a la tienda 🏪 (${tripsToShop} veces). Nuevo objetivo: regresar a casa 🏠`
+          `Llegó a la tienda (${tripsToShop} veces). Nuevo objetivo: regresar a casa`
         );
       } else {
         tripsToHome += 1;
         currentGoal = "shop";
         walker.setGoal(currentGoal);
         updateStatus(
-          `Llegó a casa 🏠 (${tripsToHome} veces). Nuevo objetivo: ir a la tienda 🏪`
+          `Llegó a casa (${tripsToHome} veces). Nuevo objetivo: ir a la tienda`
         );
       }
     }
