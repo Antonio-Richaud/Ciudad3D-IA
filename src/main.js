@@ -275,7 +275,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ============= Loop principal =============
-  const SIM_SPEED = 1; // acelera la simulación
+  const SIM_SPEED = 10; // acelera la simulación
 
   engine.onUpdate((dt) => {
     const scaledDt = dt * SIM_SPEED;
