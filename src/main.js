@@ -31,7 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
   statusEl.style.fontSize = "12px";
   statusEl.style.color = "#fff";
   statusEl.style.pointerEvents = "none";
-  statusEl.textContent = "Ningún agente seleccionado";
+  statusEl.textContent = "Ciudad aprendiendo...";
   container.appendChild(statusEl);
 
   // ================= Panel derecho del agente =================
