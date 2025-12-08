@@ -5,8 +5,7 @@ import { createCity, applyCityState } from "./city/cityScene.js";
 import { CarAgent } from "./agents/CarAgent.js";
 import { WalkerAgent } from "./agents/WalkerAgent.js";
 import { QLearningBrain } from "./agents/brains/QLearningBrain.js";
-// Si quieres regresar al brain clásico, cambia la línea de arriba
-// por: import { ShortestPathBrain } from "./agents/brains/ShortestPathBrain.js";
+import { PolicyOverlay } from "./visualization/policyOverlay.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("app");
@@ -18,7 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const engine = createEngine(container);
   const city = createCity(engine.scene);
 
-  // ============= HUD (abajo izquierda) =============
+  // ================= HUD abajo izquierda =================
   const statusEl = document.createElement("div");
   statusEl.id = "agent-status";
   statusEl.style.position = "absolute";
@@ -39,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
     statusEl.textContent = text;
   };
 
-  // ============= Panel derecho para el agente =============
+  // ================= Panel derecho del agente =================
   const sidePanel = document.createElement("div");
   sidePanel.id = "agent-panel";
   sidePanel.style.position = "absolute";
@@ -48,14 +47,14 @@ document.addEventListener("DOMContentLoaded", () => {
   sidePanel.style.width = "260px";
   sidePanel.style.height = "100%";
   sidePanel.style.background = "rgba(0,0,0,0.7)";
-  sidePanel.style.display = "none"; // oculto por defecto
+  sidePanel.style.display = "none";
   sidePanel.style.color = "#fff";
   sidePanel.style.fontFamily =
     "system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
   sidePanel.style.fontSize = "12px";
-  sidePanel.style.padding = "10px 10px 10px 10px";
+  sidePanel.style.padding = "10px";
   sidePanel.style.boxSizing = "border-box";
-  sidePanel.style.pointerEvents = "none"; // no bloquea el mouse sobre la escena
+  sidePanel.style.pointerEvents = "none";
   container.appendChild(sidePanel);
 
   const panelTitle = document.createElement("div");
@@ -64,7 +63,6 @@ document.addEventListener("DOMContentLoaded", () => {
   panelTitle.style.marginBottom = "6px";
   sidePanel.appendChild(panelTitle);
 
-  // Canvas de la gráfica
   const chartCanvas = document.createElement("canvas");
   chartCanvas.id = "learning-chart";
   chartCanvas.width = 220;
@@ -76,14 +74,12 @@ document.addEventListener("DOMContentLoaded", () => {
   sidePanel.appendChild(chartCanvas);
   const chartCtx = chartCanvas.getContext("2d");
 
-  // Info del modelo (texto / futura red neuronal)
   const modelInfoEl = document.createElement("div");
   modelInfoEl.style.fontSize = "11px";
   modelInfoEl.style.lineHeight = "1.4";
   modelInfoEl.style.marginTop = "4px";
   sidePanel.appendChild(modelInfoEl);
 
-  // Función para dibujar la gráfica
   const drawLearningChart = (info) => {
     if (!chartCtx || !info) return;
     const stats = info.episodeStats || [];
@@ -112,7 +108,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const maxSteps = Math.max(...stepsArr);
     const range = Math.max(1, maxSteps - minSteps);
 
-    // Ejes
     ctx.strokeStyle = "#888888";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -121,7 +116,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.lineTo(w - padding, h - padding);
     ctx.stroke();
 
-    // Curva de pasos
     ctx.strokeStyle = "#00ff88";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -141,7 +135,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     ctx.stroke();
 
-    // Info de epsilon y episodios
     ctx.fillStyle = "#cccccc";
     ctx.font = "9px system-ui, -apple-system";
     ctx.fillText(
@@ -159,18 +152,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     modelInfoEl.innerHTML = `
       <div style="font-weight:600; margin-bottom:4px;">Modelo de decisión</div>
-      <div>Tipo: Q-Learning tabular (sin red neuronal)</div>
+      <div>Tipo: Q-Learning tabular</div>
       <div>Episodios: ${info.episodes}</div>
       <div>Paso actual del episodio: ${info.episodeSteps}</div>
       <div>Total de pasos: ${info.totalSteps}</div>
-      <div style="margin-top:6px; font-size:10px; opacity:0.8;">
-        Cuando metamos una red neuronal, aquí se puede dibujar<br/>
-        un diagrama de capas y pesos en tiempo real.
+      <div style="margin-top:6px; font-size:10px; opacity:0.75;">
+        En el overlay de la ciudad ves la política aprendida:<br/>
+        color (Q-value) y flechas indicando la mejor acción por calle.
       </div>
     `;
   };
 
-  // ============= Estado visual inicial de la ciudad =============
+  // ================= Estado visual inicial de la ciudad =================
   const initialState = {
     buildingHeightMultiplier: 1,
     skyColor: "#5f9df3",
@@ -196,6 +189,10 @@ document.addEventListener("DOMContentLoaded", () => {
     maxEpisodeSteps: 60,
   });
 
+  // Overlay de política
+  const policyOverlay = new PolicyOverlay(city, engine.scene);
+  let lastPolicyEpisode = 0;
+
   // Nodo inicial del muñequito: entrada de la casa (si existe)
   const homePOI = city.pointsOfInterest?.home;
   const walkerStartRoad =
@@ -219,9 +216,9 @@ document.addEventListener("DOMContentLoaded", () => {
   let tripsToHome = 0;
 
   walker.setGoal(currentGoal);
-  updateStatus("Objetivo: ir a la tienda");
+  updateStatus("Objetivo: ir a la tienda 🏪");
 
-  // ============= Raycaster para hover sobre el agente =============
+  // ================= Raycaster + lock de cámara =================
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
 
@@ -234,19 +231,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const localX = event.clientX - rect.left;
     const localY = event.clientY - rect.top;
 
-    // Si ya estamos en modo "lock", el PRIMER movimiento grande del mouse libera
+    // Si ya estamos lockeados, un movimiento grande libera
     if (followLocked) {
       const dx = localX - lockMousePos.x;
       const dy = localY - lockMousePos.y;
       const dist2 = dx * dx + dy * dy;
 
-      // umbral ~ 5px
       if (dist2 > 25) {
         followLocked = false;
         focusedAgent = null;
         sidePanel.style.display = "none";
       }
-      return; // mientras esté lockeado NO raycasteamos nada
+      return;
     }
 
     // Si NO está lockeado, hacemos raycast normal
@@ -268,14 +264,13 @@ document.addEventListener("DOMContentLoaded", () => {
       lockMousePos.y = localY;
       sidePanel.style.display = "block";
     } else {
-      // Mientras no haya lock, si no intersecta no mostramos panel
       focusedAgent = null;
       sidePanel.style.display = "none";
     }
   });
 
-  // ============= Loop principal =============
-  const SIM_SPEED = 10; // acelera la simulación
+  // ================= Loop principal =================
+  const SIM_SPEED = 6;
 
   engine.onUpdate((dt) => {
     const scaledDt = dt * SIM_SPEED;
@@ -290,19 +285,19 @@ document.addEventListener("DOMContentLoaded", () => {
         currentGoal = "home";
         walker.setGoal(currentGoal);
         updateStatus(
-          `Llegó a la tienda (${tripsToShop} veces). Nuevo objetivo: regresar a casa`
+          `Llegó a la tienda 🏪 (${tripsToShop} veces). Nuevo objetivo: regresar a casa 🏠`
         );
       } else {
         tripsToHome += 1;
         currentGoal = "shop";
         walker.setGoal(currentGoal);
         updateStatus(
-          `Llegó a casa (${tripsToHome} veces). Nuevo objetivo: ir a la tienda`
+          `Llegó a casa 🏠 (${tripsToHome} veces). Nuevo objetivo: ir a la tienda 🏪`
         );
       }
     }
 
-    // Actualizar gráfica e info de modelo (si el panel está visible o no, da igual)
+    // Info del brain
     if (
       walkerBrain &&
       typeof walkerBrain.getDebugInfo === "function"
@@ -310,9 +305,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const info = walkerBrain.getDebugInfo();
       drawLearningChart(info);
       updateModelInfo(info);
+
+      // Actualizar overlay solo cuando cambia el número de episodios
+      if (info.episodes !== lastPolicyEpisode) {
+        policyOverlay.updateFromBrain(walkerBrain, currentGoal);
+        lastPolicyEpisode = info.episodes;
+      }
     }
 
-    // Si hay agente enfocado, mover la cámara hacia él
+    // Cámara siguiendo al agente si está enfocado
     if (focusedAgent) {
       const targetPos = focusedAgent.getWorldPosition(
         new THREE.Vector3()
@@ -337,6 +338,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   engine.start();
 
-  // Debug opcional
-  // window.__CITY3D__ = { engine, city, agents, walkerBrain };
-});
+  // window.__CITY3D__ = { engine, city, agents, walkerBrain, policyOverlay };
+})
