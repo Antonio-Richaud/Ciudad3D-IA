@@ -319,20 +319,27 @@ document.addEventListener("DOMContentLoaded", () => {
         new THREE.Vector3()
       );
 
-      const camTargetPos = new THREE.Vector3(
-        targetPos.x + 18,
-        targetPos.y + 20,
-        targetPos.z + 18
-      );
+      // Offset de la cámara respecto al agente (ajusta a tu gusto)
+      const offset = new THREE.Vector3(16, 22, 18);
+      const camTargetPos = targetPos.clone().add(offset);
 
+      // Suavizar movimiento de la cámara
       engine.camera.position.lerp(camTargetPos, 0.12);
 
+      // Punto al que queremos mirar (ligeramente arriba del mono)
       const lookAt = new THREE.Vector3(
         targetPos.x,
-        targetPos.y + 2,
+        targetPos.y + 1.2,
         targetPos.z
       );
-      engine.camera.lookAt(lookAt);
+
+      // MUY IMPORTANTE: decirle a OrbitControls a dónde mirar
+      if (engine.controls) {
+        engine.controls.target.lerp(lookAt, 0.2);
+      } else {
+        // fallback por si algún día no usamos OrbitControls
+        engine.camera.lookAt(lookAt);
+      }
     }
   });
 
