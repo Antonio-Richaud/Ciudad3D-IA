@@ -1,269 +1,252 @@
 // src/agents/CarAgent.js
 import * as THREE from "three";
 import { gridToWorld } from "../city/cityScene.js";
+import { getNeighbors } from "./pathPlanner.js";
 
+/**
+ * Crea un modelo 3D sencillo de carro.
+ */
+function createCarMesh() {
+  const group = new THREE.Group();
+
+  // Cuerpo principal
+  const bodyGeom = new THREE.BoxGeometry(1.0, 0.35, 1.8);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0xe74c3c,
+    roughness: 0.4,
+    metalness: 0.25,
+  });
+  const body = new THREE.Mesh(bodyGeom, bodyMat);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  body.position.y = 0.35;
+  group.add(body);
+
+  // Cabina
+  const cabinGeom = new THREE.BoxGeometry(0.8, 0.35, 0.9);
+  const cabinMat = new THREE.MeshStandardMaterial({
+    color: 0xf5f5f5,
+    roughness: 0.2,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const cabin = new THREE.Mesh(cabinGeom, cabinMat);
+  cabin.castShadow = true;
+  cabin.receiveShadow = true;
+  cabin.position.set(0, 0.55, -0.1);
+  group.add(cabin);
+
+  // Llantas
+  const wheelGeom = new THREE.CylinderGeometry(0.22, 0.22, 0.18, 12);
+  const wheelMat = new THREE.MeshStandardMaterial({
+    color: 0x111111,
+    roughness: 0.7,
+    metalness: 0.1,
+  });
+
+  function addWheel(x, z) {
+    const w = new THREE.Mesh(wheelGeom, wheelMat);
+    w.rotation.z = Math.PI / 2;
+    w.castShadow = true;
+    w.receiveShadow = true;
+    w.position.set(x, 0.22, z);
+    group.add(w);
+  }
+
+  const dx = 0.46;
+  const dz = 0.7;
+  addWheel(-dx, dz);
+  addWheel(dx, dz);
+  addWheel(-dx, -dz);
+  addWheel(dx, -dz);
+
+  return group;
+}
+
+/**
+ * CarAgent:
+ * - Se mueve por las calles (centro de la vía).
+ * - Puede usar un brain (CarShortestPathBrain, QLearningBrain, etc.)
+ *   o moverse de forma aleatoria si no hay brain.
+ */
 export class CarAgent {
-  constructor(city, scene, options = {}) {
+  /**
+   * @param {object} city
+   * @param {THREE.Scene} scene
+   * @param {object|null} brain
+   * @param {object} options  { startRoad?: {gridX,gridZ}, speed?: number }
+   */
+  constructor(city, scene, brain = null, options = {}) {
     this.city = city;
     this.scene = scene;
-    this.speed = options.speed ?? 6;
+    this.brain = brain || null;
 
-    const roads = city.roads;
-    if (!roads || roads.length === 0) {
-      throw new Error("CarAgent: no hay calles en la ciudad");
-    }
+    this.currentRoadNode =
+      options.startRoad ||
+      this._findDefaultStartRoadNode() || { gridX: 0, gridZ: 0 };
 
-    const startRoad =
-      roads[Math.floor(Math.random() * roads.length)];
+    this.targetRoadNode = null;
 
-    this.gridX = startRoad.gridX;
-    this.gridZ = startRoad.gridZ;
-    this.prevGridX = this.gridX;
-    this.prevGridZ = this.gridZ;
+    this.speed = options.speed || 8;
+    this.segmentDuration = 1.0;
+    this.segmentElapsed = 0;
+    this.moving = false;
 
-    const startWorld = gridToWorld(city, this.gridX, this.gridZ, 0);
-    this.position = new THREE.Vector3(
-      startWorld.x,
-      0.5,
-      startWorld.z
-    );
+    this.segmentStartPos = new THREE.Vector3();
+    this.segmentEndPos = new THREE.Vector3();
 
-    this.targetGridX = null;
-    this.targetGridZ = null;
-    this.targetPos = null;
+    this.baseY = 0.25;
 
-    this.mesh = this.#createMesh();
-    this.mesh.position.copy(this.position);
-    this.scene.add(this.mesh);
-  }
+    this.object3D = createCarMesh();
+    this.scene.add(this.object3D);
 
-  #createMesh() {
-    const group = new THREE.Group();
-
-    const cellSize = this.city.cellSize;
-    const bodyLength = cellSize * 0.6;
-    const bodyWidth = cellSize * 0.3;
-    const bodyHeight = 0.6;
-
-    // Cuerpo
-    const bodyGeom = new THREE.BoxGeometry(
-      bodyWidth,
-      bodyHeight,
-      bodyLength
-    );
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0xff5c5c,
-      metalness: 0.5,
-      roughness: 0.35,
-    });
-    const body = new THREE.Mesh(bodyGeom, bodyMat);
-    body.castShadow = true;
-    body.receiveShadow = true;
-    body.position.y = bodyHeight / 2;
-
-    // Cabina
-    const cabinGeom = new THREE.BoxGeometry(
-      bodyWidth * 0.8,
-      bodyHeight * 0.7,
-      bodyLength * 0.45
-    );
-    const cabinMat = new THREE.MeshStandardMaterial({
-      color: 0xeeeeff,
-      metalness: 0.1,
-      roughness: 0.15,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const cabin = new THREE.Mesh(cabinGeom, cabinMat);
-    cabin.position.y = bodyHeight + (bodyHeight * 0.7) / 2 - 0.05;
-    cabin.position.z = bodyLength * 0.05;
-    cabin.castShadow = true;
-    cabin.receiveShadow = true;
-
-    // Llantas
-    const wheelGeom = new THREE.CylinderGeometry(
-      bodyWidth * 0.16,
-      bodyWidth * 0.16,
-      bodyWidth * 0.3,
-      10
-    );
-    const wheelMat = new THREE.MeshStandardMaterial({
-      color: 0x111111,
-      roughness: 0.9,
-      metalness: 0.0,
-    });
-
-    const wheelOffsets = [
-      [1, 1],
-      [1, -1],
-      [-1, 1],
-      [-1, -1],
-    ];
-
-    wheelOffsets.forEach(([sx, sz]) => {
-      const wheel = new THREE.Mesh(wheelGeom, wheelMat);
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(
-        (bodyWidth / 2 - bodyWidth * 0.1) * sx,
-        bodyHeight * 0.2,
-        (bodyLength / 2 - bodyLength * 0.2) * sz
-      );
-      wheel.castShadow = true;
-      wheel.receiveShadow = true;
-      group.add(wheel);
-    });
-
-    // Luces delanteras
-    const lightGeom = new THREE.BoxGeometry(
-      bodyWidth * 0.18,
-      bodyHeight * 0.15,
-      bodyHeight * 0.15
-    );
-    const headlightMat = new THREE.MeshStandardMaterial({
-      color: 0xffffcc,
-      emissive: 0xffffcc,
-      emissiveIntensity: 1.5,
-      roughness: 0.2,
-      metalness: 0.0,
-    });
-    const leftLight = new THREE.Mesh(lightGeom, headlightMat);
-    const rightLight = new THREE.Mesh(lightGeom, headlightMat);
-    const lightZ = bodyLength / 2 + 0.02;
-    const lightY = bodyHeight * 0.4;
-
-    leftLight.position.set(-bodyWidth * 0.25, lightY, lightZ);
-    rightLight.position.set(bodyWidth * 0.25, lightY, lightZ);
-    leftLight.castShadow = false;
-    rightLight.castShadow = false;
-    group.add(leftLight);
-    group.add(rightLight);
-
-    group.add(body);
-    group.add(cabin);
-
-    return group;
-  }
-
-  #getNeighbors() {
-    const { roadMap } = this.city;
-    const deltas = [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ];
-
-    const neighbors = [];
-
-    for (const [dx, dz] of deltas) {
-      const nx = this.gridX + dx;
-      const nz = this.gridZ + dz;
-      const key = `${nx},${nz}`;
-      const road = roadMap.get(key);
-      if (road) {
-        neighbors.push(road);
-      }
-    }
-
-    return neighbors;
-  }
-
-  #pickNextTarget() {
-    const neighbors = this.#getNeighbors();
-
-    if (neighbors.length === 0) {
-      // Calle aislada (no debería ocurrir): nos quedamos en el mismo tile
-      const wp = gridToWorld(
-        this.city,
-        this.gridX,
-        this.gridZ,
-        0
-      );
-      this.targetGridX = this.gridX;
-      this.targetGridZ = this.gridZ;
-      this.targetPos = new THREE.Vector3(wp.x, 0.5, wp.z);
-      return;
-    }
-
-    let candidates = neighbors;
-
-    if (neighbors.length > 1) {
-      const filtered = neighbors.filter(
-        (r) =>
-          !(
-            r.gridX === this.prevGridX &&
-            r.gridZ === this.prevGridZ
-          )
-      );
-      if (filtered.length > 0) {
-        candidates = filtered;
-      }
-    }
-
-    const next =
-      candidates[Math.floor(Math.random() * candidates.length)];
-
-    this.prevGridX = this.gridX;
-    this.prevGridZ = this.gridZ;
-
-    this.targetGridX = next.gridX;
-    this.targetGridZ = next.gridZ;
-
-    const wp = gridToWorld(
+    const initialWorld = gridToWorld(
       this.city,
-      this.targetGridX,
-      this.targetGridZ,
-      0
+      this.currentRoadNode.gridX,
+      this.currentRoadNode.gridZ,
+      this.baseY
     );
-    this.targetPos = new THREE.Vector3(wp.x, 0.5, wp.z);
+    this.object3D.position.set(
+      initialWorld.x,
+      this.baseY,
+      initialWorld.z
+    );
+    this.object3D.rotation.y = 0;
+  }
+
+  _findDefaultStartRoadNode() {
+    const mid = Math.floor(this.city.gridSize / 2);
+    return { gridX: mid, gridZ: mid };
+  }
+
+  getCurrentRoadNode() {
+    return {
+      gridX: this.currentRoadNode.gridX,
+      gridZ: this.currentRoadNode.gridZ,
+    };
+  }
+
+  getWorldPosition(target = new THREE.Vector3()) {
+    return target.copy(this.object3D.position);
+  }
+
+  isAtRoadNode(node) {
+    if (!node) return false;
+    return (
+      this.currentRoadNode.gridX === node.gridX &&
+      this.currentRoadNode.gridZ === node.gridZ
+    );
+  }
+
+  isAtPOI(poi) {
+    if (!poi?.entranceRoad) return false;
+    return this.isAtRoadNode(poi.entranceRoad);
   }
 
   update(dt) {
-    if (!this.targetPos) {
-      this.#pickNextTarget();
-      return;
+    if (!this.moving) {
+      this._startNextSegment();
     }
 
-    const dir = new THREE.Vector3().subVectors(
-      this.targetPos,
-      this.position
+    if (!this.moving) return;
+
+    this.segmentElapsed += dt;
+    let t = this.segmentElapsed / this.segmentDuration;
+    if (t >= 1) t = 1;
+
+    this.object3D.position.lerpVectors(
+      this.segmentStartPos,
+      this.segmentEndPos,
+      t
     );
-    const dist = dir.length();
 
-    if (dist < 0.01) {
-      this.gridX = this.targetGridX;
-      this.gridZ = this.targetGridZ;
-      this.position.copy(this.targetPos);
-      this.targetPos = null;
-      this.#pickNextTarget();
-      return;
-    }
+    const bob = Math.sin(t * Math.PI * 2) * 0.015;
+    this.object3D.position.y = this.baseY + bob;
 
-    dir.normalize();
-    const step = this.speed * dt;
+    if (t >= 1) {
+      const prevNode = { ...this.currentRoadNode };
+      this.currentRoadNode = { ...this.targetRoadNode };
 
-    if (step >= dist) {
-      this.position.copy(this.targetPos);
-      this.gridX = this.targetGridX;
-      this.gridZ = this.targetGridZ;
-      this.targetPos = null;
-      this.#pickNextTarget();
-    } else {
-      this.position.addScaledVector(dir, step);
-    }
+      this.moving = false;
+      this.segmentElapsed = 0;
+      this.targetRoadNode = null;
 
-    this.mesh.position.copy(this.position);
+      this.object3D.position.copy(this.segmentEndPos);
 
-    if (this.targetPos) {
-      const lookDir = new THREE.Vector3().subVectors(
-        this.targetPos,
-        this.position
-      );
-      if (lookDir.lengthSq() > 0.0001) {
-        lookDir.normalize();
-        const angle = Math.atan2(lookDir.x, lookDir.z);
-        this.mesh.rotation.y = angle;
+      if (
+        this.brain &&
+        typeof this.brain.onNodeArrived === "function"
+      ) {
+        this.brain.onNodeArrived(prevNode, this.currentRoadNode, {
+          goalId: null,
+          isGoal: false,
+          reward: 0,
+        });
       }
     }
+  }
+
+  _startNextSegment() {
+    const currentNode = this.getCurrentRoadNode();
+
+    let nextNode = null;
+
+    // Si hay brain, le pedimos el siguiente nodo
+    if (this.brain && typeof this.brain.chooseNextRoad === "function") {
+      nextNode = this.brain.chooseNextRoad(currentNode);
+    }
+
+    // Si el brain no da nada, caemos a movimiento aleatorio
+    if (!nextNode) {
+      const neighbors = getNeighbors(this.city, currentNode);
+      if (!neighbors || neighbors.length === 0) {
+        this.moving = false;
+        return;
+      }
+      const pick =
+        neighbors[Math.floor(Math.random() * neighbors.length)];
+      nextNode = { gridX: pick.gridX, gridZ: pick.gridZ };
+    }
+
+    const dx = nextNode.gridX - currentNode.gridX;
+    const dz = nextNode.gridZ - currentNode.gridZ;
+    const manhattan = Math.abs(dx) + Math.abs(dz);
+    if (manhattan !== 1) {
+      console.warn(
+        "[CarAgent] nextNode no es vecino directo:",
+        currentNode,
+        nextNode
+      );
+      this.moving = false;
+      return;
+    }
+
+    const startPos = this.getWorldPosition(new THREE.Vector3());
+    const endPos = gridToWorld(
+      this.city,
+      nextNode.gridX,
+      nextNode.gridZ,
+      this.baseY
+    );
+
+    this.segmentStartPos.copy(startPos);
+    this.segmentEndPos.copy(endPos);
+
+    const dirVec = new THREE.Vector3(
+      endPos.x - startPos.x,
+      0,
+      endPos.z - startPos.z
+    );
+    dirVec.normalize();
+    const angle = Math.atan2(dirVec.x, dirVec.z);
+    this.object3D.rotation.y = angle;
+
+    const distance = startPos.distanceTo(endPos);
+    this.segmentDuration = distance / this.speed;
+    this.segmentElapsed = 0;
+    this.moving = true;
+
+    this.targetRoadNode = { ...nextNode };
   }
 }
