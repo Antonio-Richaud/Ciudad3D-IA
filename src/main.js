@@ -31,12 +31,8 @@ document.addEventListener("DOMContentLoaded", () => {
   statusEl.style.fontSize = "12px";
   statusEl.style.color = "#fff";
   statusEl.style.pointerEvents = "none";
-  statusEl.textContent = "Inicializando agente...";
+  statusEl.textContent = "Ningún agente seleccionado";
   container.appendChild(statusEl);
-
-  const updateStatus = (text) => {
-    statusEl.textContent = text;
-  };
 
   // ================= Panel derecho del agente =================
   const sidePanel = document.createElement("div");
@@ -162,7 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
       <div>Paso actual del episodio: ${info.episodeSteps}</div>
       <div>Total de pasos: ${info.totalSteps}</div>
       <div style="margin-top:6px; font-size:10px; opacity:0.75;">
-        La capa de colores en la ciudad muestra la política aprendida:<br/>
+        La capa de colores en la ciudad muestra la política aprendida:
         color = valor de Q, flecha = mejor acción desde cada calle.
       </div>
     `;
@@ -179,13 +175,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const agents = [];
 
-  // 🚗 Carrito
+  // Carro
   const car = new CarAgent(city, engine.scene, { speed: 7 });
   car.id = "car-1";
   car.label = "Carro 1";
   agents.push(car);
 
-  // 🧠 Cerebro Q-Learning para el walker
+  // Cerebro Q-Learning para el walker
   const walkerBrain = new QLearningBrain(city, {
     alpha: 0.4,
     gamma: 0.9,
@@ -205,7 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const walkerStartRoad =
     homePOI?.entranceRoad || { gridX: 9, gridZ: 7 };
 
-  // 🚶 Muñequito con brain
+  // Walker
   const walker = new WalkerAgent(
     city,
     engine.scene,
@@ -219,13 +215,35 @@ document.addEventListener("DOMContentLoaded", () => {
   walker.label = "Peatón 1";
   agents.push(walker);
 
-  // 🎯 Estado de la misión
+  // Estado de la misión del walker
   let currentGoal = "shop";
   let tripsToShop = 0;
   let tripsToHome = 0;
 
   walker.setGoal(currentGoal);
-  updateStatus("Objetivo: ir a la tienda 🏪");
+
+  // Función para actualizar el HUD según el agente seleccionado
+  function updateStatusForAgent(agent) {
+    if (!agent) {
+      statusEl.textContent = "Ciudad aprendiendo...";
+      return;
+    }
+
+    const name = agent.label || agent.id || "Agente";
+
+    if (agent === walker) {
+      const goalText =
+        currentGoal === "shop"
+          ? "Ir a la tienda"
+          : "Regresar a casa";
+
+      statusEl.textContent =
+        `Agente: ${name} | Objetivo actual: ${goalText} ` +
+        `| Viajes a tienda: ${tripsToShop} | Viajes a casa: ${tripsToHome}`;
+    } else {
+      statusEl.textContent = `Agente: ${name} (sin objetivo definido)`;
+    }
+  }
 
   // ================= Dropdown de agentes =================
   const agentSelect = document.createElement("select");
@@ -267,12 +285,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const id = agentSelect.value;
 
     if (!id) {
-      // limpiar selección
       focusedAgent = null;
       focusMode = "none";
       sidePanel.style.display = "none";
 
-      // limpiar gráfica
       if (chartCtx) {
         chartCtx.clearRect(
           0,
@@ -282,6 +298,7 @@ document.addEventListener("DOMContentLoaded", () => {
         );
       }
       modelInfoEl.textContent = "";
+      updateStatusForAgent(null);
       return;
     }
 
@@ -291,8 +308,8 @@ document.addEventListener("DOMContentLoaded", () => {
     focusedAgent = agent;
     focusMode = "select";
     sidePanel.style.display = "block";
+    updateStatusForAgent(agent);
 
-    // Si el agente NO tiene brain, mostramos mensaje fijo
     if (
       !agent.brain ||
       typeof agent.brain.getDebugInfo !== "function"
@@ -315,7 +332,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Hover solo controla foco cuando NO hay selección manual
   container.addEventListener("mousemove", (event) => {
-    if (focusMode === "select") return; // selección manual manda
+    if (focusMode === "select") return;
 
     const rect = container.getBoundingClientRect();
     const localX = event.clientX - rect.left;
@@ -336,10 +353,12 @@ document.addEventListener("DOMContentLoaded", () => {
       focusedAgent = walker;
       focusMode = "hover";
       sidePanel.style.display = "block";
+      updateStatusForAgent(walker);
     } else if (focusMode === "hover") {
       focusedAgent = null;
       focusMode = "none";
       sidePanel.style.display = "none";
+      updateStatusForAgent(null);
     }
   });
 
@@ -358,16 +377,15 @@ document.addEventListener("DOMContentLoaded", () => {
         tripsToShop += 1;
         currentGoal = "home";
         walker.setGoal(currentGoal);
-        updateStatus(
-          `Llegó a la tienda 🏪 (${tripsToShop} veces). Nuevo objetivo: regresar a casa 🏠`
-        );
       } else {
         tripsToHome += 1;
         currentGoal = "shop";
         walker.setGoal(currentGoal);
-        updateStatus(
-          `Llegó a casa 🏠 (${tripsToHome} veces). Nuevo objetivo: ir a la tienda 🏪`
-        );
+      }
+
+      // Solo actualizamos el HUD si el walker es el agente enfocado
+      if (focusedAgent === walker) {
+        updateStatusForAgent(walker);
       }
     }
 
@@ -383,7 +401,6 @@ document.addEventListener("DOMContentLoaded", () => {
       drawLearningChart(info);
       updateModelInfo(info, focusedAgent);
 
-      // Si el brain es Q-Learning, actualizamos overlay de política
       if (brain instanceof QLearningBrain) {
         if (info.episodes !== lastPolicyEpisode) {
           policyOverlay.updateFromBrain(brain, currentGoal);
@@ -398,14 +415,11 @@ document.addEventListener("DOMContentLoaded", () => {
         new THREE.Vector3()
       );
 
-      // Offset bonito de cámara respecto al agente
       const offset = new THREE.Vector3(16, 22, 18);
       const camTargetPos = targetPos.clone().add(offset);
 
-      // Suavizado
       engine.camera.position.lerp(camTargetPos, 0.12);
 
-      // Punto de mira (ligeramente arriba del agente)
       const lookAt = new THREE.Vector3(
         targetPos.x,
         targetPos.y + 1.2,
