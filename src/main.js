@@ -108,6 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const maxSteps = Math.max(...stepsArr);
     const range = Math.max(1, maxSteps - minSteps);
 
+    // Ejes
     ctx.strokeStyle = "#888888";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -116,6 +117,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.lineTo(w - padding, h - padding);
     ctx.stroke();
 
+    // Curva
     ctx.strokeStyle = "#00ff88";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -144,21 +146,24 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   };
 
-  const updateModelInfo = (info) => {
-    if (!info) {
+  const updateModelInfo = (info, agent) => {
+    if (!info || !agent) {
       modelInfoEl.textContent = "";
       return;
     }
 
+    const name = agent.label || agent.id || "Agente";
+
     modelInfoEl.innerHTML = `
       <div style="font-weight:600; margin-bottom:4px;">Modelo de decisión</div>
-      <div>Tipo: Q-Learning tabular</div>
+      <div>Agente: ${name}</div>
+      <div>Tipo: Q-Learning tabular (sin red neuronal aún)</div>
       <div>Episodios: ${info.episodes}</div>
       <div>Paso actual del episodio: ${info.episodeSteps}</div>
       <div>Total de pasos: ${info.totalSteps}</div>
       <div style="margin-top:6px; font-size:10px; opacity:0.75;">
-        En el overlay de la ciudad ves la política aprendida:<br/>
-        color (Q-value) y flechas indicando la mejor acción por calle.
+        La capa de colores en la ciudad muestra la política aprendida:<br/>
+        color = valor de Q, flecha = mejor acción desde cada calle.
       </div>
     `;
   };
@@ -176,9 +181,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 🚗 Carrito
   const car = new CarAgent(city, engine.scene, { speed: 7 });
+  car.id = "car-1";
+  car.label = "Carro 1";
   agents.push(car);
 
-  // 🧠 Cerebro del muñequito (Q-Learning)
+  // 🧠 Cerebro Q-Learning para el walker
   const walkerBrain = new QLearningBrain(city, {
     alpha: 0.4,
     gamma: 0.9,
@@ -208,6 +215,8 @@ document.addEventListener("DOMContentLoaded", () => {
       startRoad: walkerStartRoad,
     }
   );
+  walker.id = "walker-1";
+  walker.label = "Peatón 1";
   agents.push(walker);
 
   // 🎯 Estado de la misión
@@ -218,53 +227,118 @@ document.addEventListener("DOMContentLoaded", () => {
   walker.setGoal(currentGoal);
   updateStatus("Objetivo: ir a la tienda 🏪");
 
-  // ================= Raycaster + lock de cámara =================
+  // ================= Dropdown de agentes =================
+  const agentSelect = document.createElement("select");
+  agentSelect.style.position = "absolute";
+  agentSelect.style.top = "10px";
+  agentSelect.style.left = "10px";
+  agentSelect.style.padding = "4px 6px";
+  agentSelect.style.background = "rgba(0,0,0,0.7)";
+  agentSelect.style.color = "#fff";
+  agentSelect.style.border = "1px solid rgba(255,255,255,0.3)";
+  agentSelect.style.borderRadius = "4px";
+  agentSelect.style.fontSize = "12px";
+  agentSelect.style.fontFamily =
+    "system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+  agentSelect.style.zIndex = "10";
+
+  const optNone = document.createElement("option");
+  optNone.value = "";
+  optNone.textContent = "Selecciona un agente...";
+  agentSelect.appendChild(optNone);
+
+  agents.forEach((agent) => {
+    const opt = document.createElement("option");
+    opt.value = agent.id;
+    opt.textContent = agent.label || agent.id;
+    agentSelect.appendChild(opt);
+  });
+
+  container.appendChild(agentSelect);
+
+  // ================= Raycaster + modo foco =================
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
 
   let focusedAgent = null;
-  let followLocked = false;
-  const lockMousePos = { x: 0, y: 0 };
+  let focusMode = "none"; // 'none' | 'hover' | 'select'
 
+  agentSelect.addEventListener("change", () => {
+    const id = agentSelect.value;
+
+    if (!id) {
+      // limpiar selección
+      focusedAgent = null;
+      focusMode = "none";
+      sidePanel.style.display = "none";
+
+      // limpiar gráfica
+      if (chartCtx) {
+        chartCtx.clearRect(
+          0,
+          0,
+          chartCanvas.width,
+          chartCanvas.height
+        );
+      }
+      modelInfoEl.textContent = "";
+      return;
+    }
+
+    const agent = agents.find((a) => a.id === id);
+    if (!agent) return;
+
+    focusedAgent = agent;
+    focusMode = "select";
+    sidePanel.style.display = "block";
+
+    // Si el agente NO tiene brain, mostramos mensaje fijo
+    if (
+      !agent.brain ||
+      typeof agent.brain.getDebugInfo !== "function"
+    ) {
+      if (chartCtx) {
+        chartCtx.clearRect(
+          0,
+          0,
+          chartCanvas.width,
+          chartCanvas.height
+        );
+      }
+      modelInfoEl.innerHTML = `
+        <div style="font-weight:600; margin-bottom:4px;">Agente sin modelo</div>
+        <div>Agente: ${agent.label || agent.id}</div>
+        <div>Este agente no tiene un modelo de aprendizaje asociado.</div>
+      `;
+    }
+  });
+
+  // Hover solo controla foco cuando NO hay selección manual
   container.addEventListener("mousemove", (event) => {
+    if (focusMode === "select") return; // selección manual manda
+
     const rect = container.getBoundingClientRect();
     const localX = event.clientX - rect.left;
     const localY = event.clientY - rect.top;
 
-    // Si ya estamos lockeados, un movimiento grande libera
-    if (followLocked) {
-      const dx = localX - lockMousePos.x;
-      const dy = localY - lockMousePos.y;
-      const dist2 = dx * dx + dy * dy;
-
-      if (dist2 > 25) {
-        followLocked = false;
-        focusedAgent = null;
-        sidePanel.style.display = "none";
-      }
-      return;
-    }
-
-    // Si NO está lockeado, hacemos raycast normal
     mouse.x = (localX / rect.width) * 2 - 1;
     mouse.y = -(localY / rect.height) * 2 + 1;
 
     raycaster.setFromCamera(mouse, engine.camera);
 
+    // Por ahora solo hacemos hover sobre el walker
     const intersects = raycaster.intersectObject(
       walker.object3D,
       true
     );
 
     if (intersects.length > 0) {
-      // Primer hover -> activamos seguimiento
       focusedAgent = walker;
-      followLocked = true;
-      lockMousePos.x = localX;
-      lockMousePos.y = localY;
+      focusMode = "hover";
       sidePanel.style.display = "block";
-    } else {
+    } else if (focusMode === "hover") {
       focusedAgent = null;
+      focusMode = "none";
       sidePanel.style.display = "none";
     }
   });
@@ -277,7 +351,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     agents.forEach((agent) => agent.update(scaledDt));
 
-    // Lógica de cambio de meta
+    // Lógica de cambio de meta (walker home <-> shop)
     const poi = city.pointsOfInterest?.[currentGoal];
     if (poi && walker.isAtPOI(poi)) {
       if (currentGoal === "shop") {
@@ -297,47 +371,50 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Info del brain
+    // Actualizar UI de "proceso mental" del agente enfocado (si tiene brain)
     if (
-      walkerBrain &&
-      typeof walkerBrain.getDebugInfo === "function"
+      focusedAgent &&
+      focusedAgent.brain &&
+      typeof focusedAgent.brain.getDebugInfo === "function"
     ) {
-      const info = walkerBrain.getDebugInfo();
-      drawLearningChart(info);
-      updateModelInfo(info);
+      const brain = focusedAgent.brain;
+      const info = brain.getDebugInfo();
 
-      // Actualizar overlay solo cuando cambia el número de episodios
-      if (info.episodes !== lastPolicyEpisode) {
-        policyOverlay.updateFromBrain(walkerBrain, currentGoal);
-        lastPolicyEpisode = info.episodes;
+      drawLearningChart(info);
+      updateModelInfo(info, focusedAgent);
+
+      // Si el brain es Q-Learning, actualizamos overlay de política
+      if (brain instanceof QLearningBrain) {
+        if (info.episodes !== lastPolicyEpisode) {
+          policyOverlay.updateFromBrain(brain, currentGoal);
+          lastPolicyEpisode = info.episodes;
+        }
       }
     }
 
-    // Cámara siguiendo al agente si está enfocado
+    // Cámara siguiendo al agente si hay foco
     if (focusedAgent) {
       const targetPos = focusedAgent.getWorldPosition(
         new THREE.Vector3()
       );
 
-      // Offset de la cámara respecto al agente (ajusta a tu gusto)
+      // Offset bonito de cámara respecto al agente
       const offset = new THREE.Vector3(16, 22, 18);
       const camTargetPos = targetPos.clone().add(offset);
 
-      // Suavizar movimiento de la cámara
+      // Suavizado
       engine.camera.position.lerp(camTargetPos, 0.12);
 
-      // Punto al que queremos mirar (ligeramente arriba del mono)
+      // Punto de mira (ligeramente arriba del agente)
       const lookAt = new THREE.Vector3(
         targetPos.x,
         targetPos.y + 1.2,
         targetPos.z
       );
 
-      // MUY IMPORTANTE: decirle a OrbitControls a dónde mirar
       if (engine.controls) {
         engine.controls.target.lerp(lookAt, 0.2);
       } else {
-        // fallback por si algún día no usamos OrbitControls
         engine.camera.lookAt(lookAt);
       }
     }
@@ -346,4 +423,4 @@ document.addEventListener("DOMContentLoaded", () => {
   engine.start();
 
   // window.__CITY3D__ = { engine, city, agents, walkerBrain, policyOverlay };
-})
+});
