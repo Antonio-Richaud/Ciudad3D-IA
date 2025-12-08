@@ -6,6 +6,7 @@ import { CarAgent } from "./agents/CarAgent.js";
 import { WalkerAgent } from "./agents/WalkerAgent.js";
 import { QLearningBrain } from "./agents/brains/QLearningBrain.js";
 import { PolicyOverlay } from "./visualization/policyOverlay.js";
+import { CarShortestPathBrain } from "./agents/brains/CarShortestPathBrain.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("app");
@@ -31,7 +32,7 @@ document.addEventListener("DOMContentLoaded", () => {
   statusEl.style.fontSize = "12px";
   statusEl.style.color = "#fff";
   statusEl.style.pointerEvents = "none";
-  statusEl.textContent = "Ciudad aprendiendo...";
+  statusEl.textContent = "Ningún agente seleccionado";
   container.appendChild(statusEl);
 
   // ================= Panel derecho del agente =================
@@ -78,19 +79,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const drawLearningChart = (info) => {
     if (!chartCtx || !info) return;
-    const stats = info.episodeStats || [];
     const ctx = chartCtx;
     const canvas = ctx.canvas;
     const w = canvas.width;
     const h = canvas.height;
 
     ctx.clearRect(0, 0, w, h);
-
     ctx.fillStyle = "#ffffff";
     ctx.font = "10px system-ui, -apple-system";
+
+    // Caso 1: cerebro de ruta más corta (carro)
+    if (info.type === "shortest-path") {
+      const pathLen =
+        typeof info.pathLength === "number" ? info.pathLength : 0;
+      const remaining =
+        typeof info.remainingSteps === "number"
+          ? info.remainingSteps
+          : 0;
+      const goalId = info.goalId || "sin objetivo";
+
+      ctx.fillText("Ruta más corta", 10, 14);
+      ctx.fillText(`Objetivo: ${goalId}`, 10, 30);
+      ctx.fillText(`Longitud de ruta: ${pathLen}`, 10, 46);
+      ctx.fillText(`Pasos restantes: ${remaining}`, 10, 62);
+      return;
+    }
+
+    // Caso 2: Q-Learning (peatón)
+    const stats = info.episodeStats || [];
     ctx.fillText("Pasos por episodio", 10, 14);
 
-    if (stats.length === 0) {
+    if (!Array.isArray(stats) || stats.length === 0) {
       ctx.fillText("Esperando episodios...", 10, 30);
       return;
     }
@@ -104,7 +123,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const maxSteps = Math.max(...stepsArr);
     const range = Math.max(1, maxSteps - minSteps);
 
-    // Ejes
     ctx.strokeStyle = "#888888";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -113,7 +131,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.lineTo(w - padding, h - padding);
     ctx.stroke();
 
-    // Curva
     ctx.strokeStyle = "#00ff88";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -133,13 +150,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     ctx.stroke();
 
-    ctx.fillStyle = "#cccccc";
-    ctx.font = "9px system-ui, -apple-system";
-    ctx.fillText(
-      `eps: ${info.epsilon.toFixed(3)}  ep: ${info.episodes}`,
-      10,
-      h - 8
-    );
+    if (
+      typeof info.epsilon === "number" &&
+      typeof info.episodes === "number"
+    ) {
+      ctx.fillStyle = "#cccccc";
+      ctx.font = "9px system-ui, -apple-system";
+      ctx.fillText(
+        `eps: ${info.epsilon.toFixed(3)}  ep: ${info.episodes}`,
+        10,
+        h - 8
+      );
+    }
   };
 
   const updateModelInfo = (info, agent) => {
@@ -150,10 +172,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const name = agent.label || agent.id || "Agente";
 
+    if (info.type === "shortest-path") {
+      modelInfoEl.innerHTML = `
+        <div style="font-weight:600; margin-bottom:4px;">Modelo de decisión</div>
+        <div>Agente: ${name}</div>
+        <div>Tipo: búsqueda de ruta más corta (BFS sobre calles)</div>
+        <div>Objetivo actual: ${info.goalId || "sin objetivo"}</div>
+        <div>Longitud de ruta: ${info.pathLength ?? 0}</div>
+        <div>Pasos restantes estimados: ${info.remainingSteps ?? 0}</div>
+      `;
+      return;
+    }
+
+    // Q-Learning
     modelInfoEl.innerHTML = `
       <div style="font-weight:600; margin-bottom:4px;">Modelo de decisión</div>
       <div>Agente: ${name}</div>
-      <div>Tipo: Q-Learning tabular (sin red neuronal aún)</div>
+      <div>Tipo: Q-Learning tabular</div>
+      <div>Objetivo actual: ${info.goalId || "sin objetivo"}</div>
       <div>Episodios: ${info.episodes}</div>
       <div>Paso actual del episodio: ${info.episodeSteps}</div>
       <div>Total de pasos: ${info.totalSteps}</div>
@@ -175,8 +211,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const agents = [];
 
-  // Carro
-  const car = new CarAgent(city, engine.scene, { speed: 7 });
+  // Carro con cerebro de ruta más corta
+  const carBrain = new CarShortestPathBrain(city, {
+    defaultGoalId: "home",
+  });
+  const car = new CarAgent(city, engine.scene, carBrain, {
+    speed: 7,
+  });
   car.id = "car-1";
   car.label = "Carro 1";
   agents.push(car);
@@ -192,7 +233,7 @@ document.addEventListener("DOMContentLoaded", () => {
     maxEpisodeSteps: 60,
   });
 
-  // Overlay de política
+  // Overlay de política (solo para Q-Learning)
   const policyOverlay = new PolicyOverlay(city, engine.scene);
   let lastPolicyEpisode = 0;
 
@@ -201,7 +242,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const walkerStartRoad =
     homePOI?.entranceRoad || { gridX: 9, gridZ: 7 };
 
-  // Walker
+  // Walker con Q-Learning
   const walker = new WalkerAgent(
     city,
     engine.scene,
@@ -216,16 +257,21 @@ document.addEventListener("DOMContentLoaded", () => {
   agents.push(walker);
 
   // Estado de la misión del walker
-  let currentGoal = "shop";
+  let walkerGoal = "shop";
   let tripsToShop = 0;
   let tripsToHome = 0;
+  walker.setGoal(walkerGoal);
 
-  walker.setGoal(currentGoal);
+  // Estado de la misión del carro
+  let carGoal = "home";
+  let carTripsToShop = 0;
+  let carTripsToHome = 0;
+  carBrain.setGoal(carGoal, car.getCurrentRoadNode());
 
   // Función para actualizar el HUD según el agente seleccionado
   function updateStatusForAgent(agent) {
     if (!agent) {
-      statusEl.textContent = "Ciudad aprendiendo...";
+      statusEl.textContent = "Ningún agente seleccionado";
       return;
     }
 
@@ -233,13 +279,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (agent === walker) {
       const goalText =
-        currentGoal === "shop"
+        walkerGoal === "shop"
           ? "Ir a la tienda"
           : "Regresar a casa";
 
       statusEl.textContent =
         `Agente: ${name} | Objetivo actual: ${goalText} ` +
         `| Viajes a tienda: ${tripsToShop} | Viajes a casa: ${tripsToHome}`;
+    } else if (agent === car) {
+      const goalText =
+        carGoal === "shop"
+          ? "Ir a la tienda"
+          : "Regresar a casa";
+
+      statusEl.textContent =
+        `Agente: ${name} | Objetivo actual: ${goalText} ` +
+        `| Viajes a tienda: ${carTripsToShop} | Viajes a casa: ${carTripsToHome}`;
     } else {
       statusEl.textContent = `Agente: ${name} (sin objetivo definido)`;
     }
@@ -274,7 +329,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   container.appendChild(agentSelect);
 
-  // ================= Raycaster + modo foco =================
+  // ================= Raycaster + foco =================
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
 
@@ -309,25 +364,6 @@ document.addEventListener("DOMContentLoaded", () => {
     focusMode = "select";
     sidePanel.style.display = "block";
     updateStatusForAgent(agent);
-
-    if (
-      !agent.brain ||
-      typeof agent.brain.getDebugInfo !== "function"
-    ) {
-      if (chartCtx) {
-        chartCtx.clearRect(
-          0,
-          0,
-          chartCanvas.width,
-          chartCanvas.height
-        );
-      }
-      modelInfoEl.innerHTML = `
-        <div style="font-weight:600; margin-bottom:4px;">Agente sin modelo</div>
-        <div>Agente: ${agent.label || agent.id}</div>
-        <div>Este agente no tiene un modelo de aprendizaje asociado.</div>
-      `;
-    }
   });
 
   // Hover solo controla foco cuando NO hay selección manual
@@ -370,26 +406,41 @@ document.addEventListener("DOMContentLoaded", () => {
 
     agents.forEach((agent) => agent.update(scaledDt));
 
-    // Lógica de cambio de meta (walker home <-> shop)
-    const poi = city.pointsOfInterest?.[currentGoal];
-    if (poi && walker.isAtPOI(poi)) {
-      if (currentGoal === "shop") {
+    // Walker: cambio de meta home <-> shop
+    const walkerPoi = city.pointsOfInterest?.[walkerGoal];
+    if (walkerPoi && walker.isAtPOI(walkerPoi)) {
+      if (walkerGoal === "shop") {
         tripsToShop += 1;
-        currentGoal = "home";
-        walker.setGoal(currentGoal);
+        walkerGoal = "home";
       } else {
         tripsToHome += 1;
-        currentGoal = "shop";
-        walker.setGoal(currentGoal);
+        walkerGoal = "shop";
       }
+      walker.setGoal(walkerGoal);
 
-      // Solo actualizamos el HUD si el walker es el agente enfocado
       if (focusedAgent === walker) {
         updateStatusForAgent(walker);
       }
     }
 
-    // Actualizar UI de "proceso mental" del agente enfocado (si tiene brain)
+    // Carro: cambio de meta home <-> shop
+    const carPoi = city.pointsOfInterest?.[carGoal];
+    if (carPoi && car.isAtPOI(carPoi)) {
+      if (carGoal === "shop") {
+        carTripsToShop += 1;
+        carGoal = "home";
+      } else {
+        carTripsToHome += 1;
+        carGoal = "shop";
+      }
+      carBrain.setGoal(carGoal, car.getCurrentRoadNode());
+
+      if (focusedAgent === car) {
+        updateStatusForAgent(car);
+      }
+    }
+
+    // Actualizar panel para el agente enfocado (si tiene brain)
     if (
       focusedAgent &&
       focusedAgent.brain &&
@@ -401,9 +452,10 @@ document.addEventListener("DOMContentLoaded", () => {
       drawLearningChart(info);
       updateModelInfo(info, focusedAgent);
 
+      // Solo el Q-Learning actualiza el overlay de política
       if (brain instanceof QLearningBrain) {
         if (info.episodes !== lastPolicyEpisode) {
-          policyOverlay.updateFromBrain(brain, currentGoal);
+          policyOverlay.updateFromBrain(brain, walkerGoal);
           lastPolicyEpisode = info.episodes;
         }
       }
@@ -436,5 +488,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   engine.start();
 
-  // window.__CITY3D__ = { engine, city, agents, walkerBrain, policyOverlay };
+  // window.__CITY3D__ = { engine, city, agents, walkerBrain, carBrain, policyOverlay };
 });
