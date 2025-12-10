@@ -67,7 +67,7 @@ const SPECIAL_LOTS = [
 
     entranceRoad: { gridX: 7, gridZ: 4 },
 
-    scale: 0.85,
+    scale: 0.9,
     rotationY: 0,
     capacity: 30,
   },
