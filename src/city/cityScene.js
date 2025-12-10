@@ -48,19 +48,26 @@ const SPECIAL_LOTS = [
     label: "Parque",
     modelUrl: PARK_MODEL_URL,
 
-    // Celda “base” (donde ya comprobamos que aparece el parque)
     buildingCell: { gridX: 7, gridZ: 5 },
 
-    // Manzana gorda reservada para que no haya edificios alrededor
+    // Reservamos TODA la manzana del parque y la de abajo,
+    // para evitar que salgan edificios dentro / pegados raro
     extraCells: [
+      // fila 5
       { gridX: 6, gridZ: 5 },
       { gridX: 8, gridZ: 5 },
+
+      // fila 6
       { gridX: 6, gridZ: 6 },
       { gridX: 7, gridZ: 6 },
       { gridX: 8, gridZ: 6 },
+
+      // fila 7
       { gridX: 6, gridZ: 7 },
       { gridX: 7, gridZ: 7 },
       { gridX: 8, gridZ: 7 },
+
+      // fila 8 (la que volvimos a quitar y que ahora necesitamos)
       { gridX: 6, gridZ: 8 },
       { gridX: 7, gridZ: 8 },
       { gridX: 8, gridZ: 8 },
@@ -68,7 +75,6 @@ const SPECIAL_LOTS = [
 
     entranceRoad: { gridX: 7, gridZ: 4 },
 
-    // Lo hacemos un poco más pequeño para que no se meta tanto a la calle
     scale: 0.85,
     rotationY: 0,
     capacity: 30,
