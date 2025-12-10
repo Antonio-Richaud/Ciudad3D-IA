@@ -513,11 +513,12 @@ export function createCity(scene) {
           wz += cellSize * 0.10;
         }
 
-        // Parque: offset fino para centrarlo en la manzana
+        // Parque: lo centramos mejor en la manzana y lo bajamos un poco
         if (specialLot.id === "park") {
-          // X mueve izquierda/derecha, Z mueve arriba/abajo
-          wx += cellSize * -0.30; // más negativo = más a la izquierda
-          wz += cellSize * 0.30;  // más positivo = más hacia abajo
+          // Lo movemos medio bloque a la derecha y hacia abajo,
+          // partiendo de la celda de buildingCell.
+          wx += cellSize * 0.5;
+          wz += cellSize * 0.6;
         }
 
         createSpecialBuilding(specialLot, wx, wz, scene, buildings);
