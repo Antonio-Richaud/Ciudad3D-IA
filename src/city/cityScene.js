@@ -7,10 +7,8 @@ const gltfLoader = new GLTFLoader();
 // Rutas a tus modelos (ajusta si usas otros nombres)
 const HOUSE_MODEL_URL = "/models/casa.glb";
 const SHOP_MODEL_URL = "/models/tienda.glb";
-const PARK_MODEL_URL = new URL(
-  "/models/parque.glb",
-  import.meta.url
-).href;
+const PARK_MODEL_URL = "/models/parque.glb";
+
 
 
 /**
@@ -44,21 +42,41 @@ const SPECIAL_LOTS = [
     capacity: 10,
     extraCells: [{ gridX: 11, gridZ: 7 }],
   },
-    // 👇 Nuevo parque: ocupa una manzana completa (2x2 lotes)
+  // ---------- PARQUE ----------
   {
     id: "park",
     label: "Parque",
     modelUrl: PARK_MODEL_URL,
-    // celda "principal" del parque
-    buildingCell: { gridX: 6, gridZ: 3 },
-    // las otras 3 celdas de la misma manzana
+
+    // Celda base donde ya viste que sí se dibuja el parque
+    buildingCell: { gridX: 7, gridZ: 5 },
+
+    // Reservamos una “super manzana” para que no aparezca NI UN edificio
+    // Ajusta si ves algo raro, pero esto ya es bastante agresivo
     extraCells: [
-      { gridX: 7, gridZ: 3 },
-      { gridX: 6, gridZ: 4 },
-      { gridX: 7, gridZ: 4 },
+      // fila 5 (misma fila del anchor)
+      { gridX: 6, gridZ: 5 },
+      { gridX: 8, gridZ: 5 },
+
+      // fila 6
+      { gridX: 6, gridZ: 6 },
+      { gridX: 7, gridZ: 6 },
+      { gridX: 8, gridZ: 6 },
+
+      // fila 7
+      { gridX: 6, gridZ: 7 },
+      { gridX: 7, gridZ: 7 },
+      { gridX: 8, gridZ: 7 },
+
+      // fila 8 por si los edificios de abajo están ahí
+      { gridX: 6, gridZ: 8 },
+      { gridX: 7, gridZ: 8 },
+      { gridX: 8, gridZ: 8 },
     ],
-    // calle por donde se entra al parque
-    entranceRoad: { gridX: 6, gridZ: 2 },
+
+    // Entrada por la calle de abajo del parque
+    entranceRoad: { gridX: 7, gridZ: 4 },
+
     scale: 1.0,
     rotationY: 0,
     capacity: 30,
@@ -493,21 +511,24 @@ export function createCity(scene) {
         let wx = worldX;
         let wz = worldZ;
 
-        // Ajuste especial de la tienda: la moviste 1 celda en X
+        // Tienda
         if (specialLot.id === "shop") {
-          wx += cellSize * 0.90; // esto es lo que tú ya ajustaste
+          wx += cellSize * 0.90;
         }
 
-        // Ajuste especial para la casa: moverla un poquito hacia "atrás"
-        // (prueba con 0.25, si quieres más/menos, subes o bajas ese factor)
+        // Casa
         if (specialLot.id === "home") {
           wz += cellSize * 0.10;
-          // Si sientes que se fue al lado contrario, cambia a -=
-          // wz -= cellSize * 0.25;
+        }
+
+        // Parque: offset fino para centrarlo en la manzana
+        if (specialLot.id === "park") {
+          // X mueve izquierda/derecha, Z mueve arriba/abajo
+          wx += cellSize * -0.30; // más negativo = más a la izquierda
+          wz += cellSize * 0.30;  // más positivo = más hacia abajo
         }
 
         createSpecialBuilding(specialLot, wx, wz, scene, buildings);
-        // Banquetas ya se crearon arriba, aquí solo evitamos edificio/árboles
         continue;
       }
 
