@@ -242,4 +242,11 @@ export class QLearningBrain {
         }
         return result;
     }
+    /**
+        * Alias para compatibilidad con overlays antiguos.
+        * Muchos overlays esperan getPolicySnapshot(goalId).
+    */
+    getPolicySnapshot(goalId) {
+        return this.getQSnapshot(goalId);
+    }
 }
