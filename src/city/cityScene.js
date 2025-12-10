@@ -518,7 +518,7 @@ export function createCity(scene) {
           // Lo movemos medio bloque a la derecha y hacia abajo,
           // partiendo de la celda de buildingCell.
           wx += cellSize * 0.5;
-          wz += cellSize * 0.6;
+          wz += cellSize * 2.47;
         }
 
         createSpecialBuilding(specialLot, wx, wz, scene, buildings);
