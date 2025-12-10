@@ -53,14 +53,6 @@ const SPECIAL_LOTS = [
     // Reservamos TODA la manzana del parque y la de abajo,
     // para evitar que salgan edificios dentro / pegados raro
     extraCells: [
-      // fila 5
-      { gridX: 6, gridZ: 5 },
-      { gridX: 8, gridZ: 5 },
-
-      // fila 6
-      { gridX: 6, gridZ: 6 },
-      { gridX: 7, gridZ: 6 },
-      { gridX: 8, gridZ: 6 },
 
       // fila 7
       { gridX: 6, gridZ: 7 },
