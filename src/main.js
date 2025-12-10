@@ -224,15 +224,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Cerebro Q-Learning para el walker
   const walkerBrain = new QLearningBrain(city, {
-    alpha: 0.5,        // aprende un poco más fuerte de cada transición
-    gamma: 0.95,       // valora más el futuro (ruta larga pero buena)
-    epsilon: 0.35,     // explora un poco más al inicio
-    epsilonMin: 0.05,  // no explora tan poco nunca
-    epsilonDecay: 0.985, // baja más rápido hacia la explotación
+    alpha: 0.4,
+    gamma: 0.9,
+    epsilon: 0.3,
+    epsilonMin: 0.02,
+    epsilonDecay: 0.99,
     maxEpisodeStats: 80,
-    maxEpisodeSteps: 70, // un poco más margen por si el mapa es más grande
+    maxEpisodeSteps: 60,
   });
-
 
   // Overlay de política (solo para Q-Learning)
   const policyOverlay = new PolicyOverlay(city, engine.scene);
@@ -243,13 +242,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const walkerStartRoad =
     homePOI?.entranceRoad || { gridX: 9, gridZ: 7 };
 
-  // Walker con Q-Learning
   const walker = new WalkerAgent(
     city,
     engine.scene,
     walkerBrain,
     {
-      speed: 10,
+      speed: 2.2,
       startRoad: walkerStartRoad,
     }
   );
@@ -257,7 +255,7 @@ document.addEventListener("DOMContentLoaded", () => {
   walker.label = "Peatón 1";
   agents.push(walker);
 
-  // Estado de la misión del walker
+  // Solo dos objetivos: tienda <-> casa
   let walkerGoal = "shop";
   let tripsToShop = 0;
   let tripsToHome = 0;
@@ -400,7 +398,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ================= Loop principal =================
-  const SIM_SPEED = 6;
+  const SIM_SPEED = 20;
 
   engine.onUpdate((dt) => {
     const scaledDt = dt * SIM_SPEED;
