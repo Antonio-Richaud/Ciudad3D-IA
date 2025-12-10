@@ -224,14 +224,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Cerebro Q-Learning para el walker
   const walkerBrain = new QLearningBrain(city, {
-    alpha: 0.4,
-    gamma: 0.9,
-    epsilon: 0.3,
-    epsilonMin: 0.02,
-    epsilonDecay: 0.99,
+    alpha: 0.5,        // aprende un poco más fuerte de cada transición
+    gamma: 0.95,       // valora más el futuro (ruta larga pero buena)
+    epsilon: 0.35,     // explora un poco más al inicio
+    epsilonMin: 0.05,  // no explora tan poco nunca
+    epsilonDecay: 0.985, // baja más rápido hacia la explotación
     maxEpisodeStats: 80,
-    maxEpisodeSteps: 60,
+    maxEpisodeSteps: 70, // un poco más margen por si el mapa es más grande
   });
+
 
   // Overlay de política (solo para Q-Learning)
   const policyOverlay = new PolicyOverlay(city, engine.scene);
@@ -248,7 +249,7 @@ document.addEventListener("DOMContentLoaded", () => {
     engine.scene,
     walkerBrain,
     {
-      speed: 2.2,
+      speed: 10,
       startRoad: walkerStartRoad,
     }
   );

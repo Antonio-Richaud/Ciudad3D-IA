@@ -85,6 +85,14 @@ export class QLearningBrain {
         this.visitedThisEpisode.clear();
     }
 
+    _manhattan(a, b) {
+        if (!a || !b) return 0;
+        return (
+            Math.abs(a.gridX - b.gridX) +
+            Math.abs(a.gridZ - b.gridZ)
+        );
+    }
+
     // ===== API esperada por WalkerAgent =====
 
     /**
@@ -166,93 +174,84 @@ export class QLearningBrain {
      * @param {object} info - { goalId, isGoal, reward }
      */
     onNodeArrived(prevNode, newNode, info = {}) {
-        const trans = this.lastTransition;
-        if (!trans) return;
+        const goalId = info.goalId || this.currentGoalId;
+        if (!goalId || !prevNode || !newNode) return;
 
-        const goalId =
-            info.goalId ||
-            trans.goalId ||
-            this.currentGoalId ||
-            "none";
+        const poi =
+            this.city.pointsOfInterest &&
+            this.city.pointsOfInterest[goalId];
+        const goalRoad = poi?.entranceRoad || null;
 
-        const baseReward =
-            typeof info.reward === "number" ? info.reward : 0;
-        const isGoal = !!info.isGoal;
+        // --- Nuevo cálculo de reward ---
+        let reward;
 
-        // Penalizar revisitar nodos en el mismo episodio (para evitar vueltas)
-        const nodeKeyNew = this._nodeKey(newNode);
-        const prevCount = this.visitedThisEpisode.get(nodeKeyNew) ?? 0;
-        this.visitedThisEpisode.set(nodeKeyNew, prevCount + 1);
+        if (info.isGoal && goalRoad) {
+            // Llegó al objetivo → recompensa grande
+            reward = 5.0;
+        } else if (goalRoad) {
+            const dPrev = this._manhattan(prevNode, goalRoad);
+            const dNew = this._manhattan(newNode, goalRoad);
+            const diff = dPrev - dNew; // > 0 = se acercó, < 0 = se alejó
 
-        let extraLoopPenalty = 0;
-        if (prevCount >= 1) {
-            // Ya visitamos antes este nodo en este episodio → penaliza fuerte
-            extraLoopPenalty = -0.5;
-        }
-
-        const reward = baseReward + extraLoopPenalty;
-
-        this.currentEpisodeReward += reward;
-        this.episodeSteps += 1;
-
-        const fromKey = this._nodeKey(trans.fromNode);
-
-        const oldQ = this._getQ(goalId, fromKey, trans.action);
-
-        let target;
-
-        if (isGoal) {
-            // Si se llegó al objetivo, no hay futuro
-            target = reward;
+            // Coste base por paso + shaping por distancia
+            // Si se acerca: diff > 0 → reward menos negativo o incluso positivo.
+            // Si se aleja: diff < 0 → castigo extra.
+            reward = -0.10 + 0.08 * diff;
         } else {
-            // Valor futuro máximo desde el nuevo estado
-            const neighbors = getNeighbors(this.city, newNode);
-            let maxFuture = 0;
-            if (neighbors && neighbors.length > 0) {
-                let best = -Infinity;
-                for (const n of neighbors) {
-                    const v = this._getQ(goalId, nodeKeyNew, n.dir);
-                    if (v > best) best = v;
-                }
-                if (best !== -Infinity) {
-                    maxFuture = best;
-                }
-            }
-            target = reward + this.gamma * maxFuture;
+            // Por si algún día hay un goal sin entranceRoad
+            reward = info.reward ?? -0.05;
         }
 
-        const newQ = oldQ + this.alpha * (target - oldQ);
-        this._setQ(goalId, fromKey, trans.action, newQ);
+        // A partir de aquí, deja tu lógica igual, pero usando `reward`
+        // en lugar de `info.reward`.
+        //
+        // Ejemplo genérico (ajústalo a tus nombres):
+        //
+        const stateKeyPrev = this._stateKey(prevNode, goalId);
+        const stateKeyNew = this._stateKey(newNode, goalId);
 
-        // Timeout por episodio demasiado largo
-        const timeout =
-            !isGoal &&
-            this.maxEpisodeSteps &&
-            this.episodeSteps >= this.maxEpisodeSteps;
+        const neighborsNext = getNeighbors(this.city, newNode) || [];
+        this._ensureState(stateKeyPrev);
+        this._ensureState(stateKeyNew);
+        const rowPrev = this.q.get(stateKeyPrev);
+        const rowNew = this.q.get(stateKeyNew);
 
-        // Si terminó episodio (llegó a goal o timeout), guardamos stats y bajamos epsilon
-        if (isGoal || timeout) {
-            this.episodeCount += 1;
+        const actionKey = `${newNode.gridX},${newNode.gridZ}`;
+        const oldQ = rowPrev.get(actionKey) ?? 0;
 
-            this.episodeStats.push({
-                episode: this.episodeCount,
-                steps: this.episodeSteps,
-                totalReward: this.currentEpisodeReward,
-                goalId,
-                timeout,
-            });
-            if (this.episodeStats.length > this.maxEpisodeStats) {
-                this.episodeStats.shift();
-            }
-
-            // Decaer epsilon (menos exploración con el tiempo)
-            this.epsilon = Math.max(
-                this.epsilonMin,
-                this.epsilon * this.epsilonDecay
+        let maxNext = 0;
+        if (!info.isGoal && neighborsNext.length > 0) {
+            maxNext = Math.max(
+                ...neighborsNext.map((nb) => {
+                    const aKey = `${nb.gridX},${nb.gridZ}`;
+                    return rowNew.get(aKey) ?? 0;
+                })
             );
+        }
 
-            // Reset episodio
-            this._startNewEpisode(this.currentGoalId);
+        const updatedQ =
+            oldQ +
+            this.alpha * (reward + this.gamma * maxNext - oldQ);
+
+        rowPrev.set(actionKey, updatedQ);
+
+        // estadísticas / episodios (usa lo que ya tenías)
+        this.lastTransition = {
+            prevNode,
+            newNode,
+            goalId,
+            isGoal: info.isGoal,
+            reward,
+            oldQ,
+            updatedQ,
+        };
+
+        this.episodeSteps += 1;
+        this.totalSteps += 1;
+
+        if (info.isGoal || this.episodeSteps >= this.maxEpisodeSteps) {
+            this._endEpisode(goalId);
+            this._startNewEpisode(newNode);
         }
     }
 
