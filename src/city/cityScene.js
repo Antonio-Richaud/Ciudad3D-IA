@@ -7,6 +7,11 @@ const gltfLoader = new GLTFLoader();
 // Rutas a tus modelos (ajusta si usas otros nombres)
 const HOUSE_MODEL_URL = "/models/casa.glb";
 const SHOP_MODEL_URL = "/models/tienda.glb";
+const PARK_MODEL_URL = new URL(
+  "/models/parque.glb",
+  import.meta.url
+).href;
+
 
 /**
  * Lotes especiales donde NO queremos edificio procedimental,
@@ -38,6 +43,25 @@ const SPECIAL_LOTS = [
     rotationY: Math.PI,
     capacity: 10,
     extraCells: [{ gridX: 11, gridZ: 7 }],
+  },
+    // 👇 Nuevo parque: ocupa una manzana completa (2x2 lotes)
+  {
+    id: "park",
+    label: "Parque",
+    modelUrl: PARK_MODEL_URL,
+    // celda "principal" del parque
+    buildingCell: { gridX: 6, gridZ: 3 },
+    // las otras 3 celdas de la misma manzana
+    extraCells: [
+      { gridX: 7, gridZ: 3 },
+      { gridX: 6, gridZ: 4 },
+      { gridX: 7, gridZ: 4 },
+    ],
+    // calle por donde se entra al parque
+    entranceRoad: { gridX: 6, gridZ: 2 },
+    scale: 1.0,
+    rotationY: 0,
+    capacity: 30,
   },
 ];
 
