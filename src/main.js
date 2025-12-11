@@ -8,6 +8,8 @@ import { QLearningBrain } from "./agents/brains/QLearningBrain.js";
 import { PolicyOverlay } from "./visualization/policyOverlay.js";
 import { CarShortestPathBrain } from "./agents/brains/CarShortestPathBrain.js";
 import { createGridOverlay } from "./debug/gridOverlay.js";
+import { createPolicyOverlay } from "./debug/policyOverlay.js";
+
 
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("app");
@@ -262,6 +264,7 @@ document.addEventListener("DOMContentLoaded", () => {
   agents.push(car);
 
   // Cerebro Q-Learning para el walker
+  // Cerebro Q-Learning del peatón (solo ruta tienda ↔ casa)
   const walkerBrain = new QLearningBrain(city, {
     alpha: 0.4,
     gamma: 0.9,
@@ -272,7 +275,7 @@ document.addEventListener("DOMContentLoaded", () => {
     maxEpisodeSteps: 60,
   });
 
-  // Overlay de política (solo para Q-Learning)
+  // Overlay de política (flechas sobre las calles según Q-Learning)
   const policyOverlay = new PolicyOverlay(city, engine.scene);
   let lastPolicyEpisode = 0;
 
@@ -281,6 +284,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const walkerStartRoad =
     homePOI?.entranceRoad || { gridX: 9, gridZ: 7 };
 
+  // Agente peatón con cerebro de Q-Learning
   const walker = new WalkerAgent(
     city,
     engine.scene,
@@ -294,11 +298,13 @@ document.addEventListener("DOMContentLoaded", () => {
   walker.label = "Peatón 1";
   agents.push(walker);
 
-  // Solo dos objetivos: tienda <-> casa
+  // Solo dos objetivos: tienda ↔ casa
   let walkerGoal = "shop";
   let tripsToShop = 0;
   let tripsToHome = 0;
+
   walker.setGoal(walkerGoal);
+  policyOverlay.updateFromBrain(walkerBrain, walkerGoal);
 
   // Estado de la misión del carro
   let carGoal = "home";
@@ -522,6 +528,14 @@ document.addEventListener("DOMContentLoaded", () => {
         engine.camera.lookAt(lookAt);
       }
     }
+    // ... dentro de engine.onUpdate(dt) DESPUÉS de actualizar al walker ...
+
+    const info = walkerBrain.getDebugInfo();
+    if (info.episodes !== lastPolicyEpisode) {
+      policyOverlay.updateFromBrain(walkerBrain, walkerGoal);
+      lastPolicyEpisode = info.episodes;
+    }
+
   });
 
   engine.start();
