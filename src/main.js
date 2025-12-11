@@ -1,4 +1,5 @@
 // src/main.js
+// src/main.js
 import * as THREE from "three";
 import { createEngine } from "./core/engine.js";
 import { createCity, applyCityState } from "./city/cityScene.js";
@@ -8,7 +9,6 @@ import { QLearningBrain } from "./agents/brains/QLearningBrain.js";
 import { PolicyOverlay } from "./visualization/policyOverlay.js";
 import { CarShortestPathBrain } from "./agents/brains/CarShortestPathBrain.js";
 import { createGridOverlay } from "./debug/gridOverlay.js";
-import { createPolicyOverlay } from "./debug/policyOverlay.js";
 
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -266,13 +266,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // Cerebro Q-Learning para el walker
   // Cerebro Q-Learning del peatón (solo ruta tienda ↔ casa)
   const walkerBrain = new QLearningBrain(city, {
-    alpha: 0.4,
+    alpha: 0.6,
     gamma: 0.9,
-    epsilon: 0.3,
-    epsilonMin: 0.02,
-    epsilonDecay: 0.99,
+    epsilon: 0.4,
+    epsilonMin: 0.05,
+    epsilonDecay: 0.985,
     maxEpisodeStats: 80,
-    maxEpisodeSteps: 60,
+    maxEpisodeSteps: 70,
   });
 
   // Overlay de política (flechas sobre las calles según Q-Learning)
@@ -302,9 +302,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let walkerGoal = "shop";
   let tripsToShop = 0;
   let tripsToHome = 0;
-
   walker.setGoal(walkerGoal);
-  policyOverlay.updateFromBrain(walkerBrain, walkerGoal);
 
   // Estado de la misión del carro
   let carGoal = "home";
@@ -528,14 +526,12 @@ document.addEventListener("DOMContentLoaded", () => {
         engine.camera.lookAt(lookAt);
       }
     }
-    // ... dentro de engine.onUpdate(dt) DESPUÉS de actualizar al walker ...
-
+    // Actualizar flechas de política SOLO cuando avance el entrenamiento
     const info = walkerBrain.getDebugInfo();
     if (info.episodes !== lastPolicyEpisode) {
       policyOverlay.updateFromBrain(walkerBrain, walkerGoal);
       lastPolicyEpisode = info.episodes;
     }
-
   });
 
   engine.start();

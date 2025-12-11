@@ -8,22 +8,22 @@ import { getNeighbors } from "../pathPlanner.js";
  * - Reward:
  *    +1.0 al llegar al objetivo
  *    -0.05 en cada paso normal
+ *
+ * Para que no tarde años en aprender, limitamos la exploración
+ * a un "corredor" alrededor de casa <-> tienda.
  */
 export class QLearningBrain {
-    /**
-     * @param {object} city
-     * @param {object} options
-     */
     constructor(city, options = {}) {
         this.city = city;
 
-        this.alpha = options.alpha ?? 0.4;
+        // Hiperparámetros un poco más agresivos para que aprenda más rápido
+        this.alpha = options.alpha ?? 0.6;
         this.gamma = options.gamma ?? 0.9;
-        this.epsilon = options.epsilon ?? 0.3;
-        this.epsilonMin = options.epsilonMin ?? 0.02;
-        this.epsilonDecay = options.epsilonDecay ?? 0.99;
+        this.epsilon = options.epsilon ?? 0.4;
+        this.epsilonMin = options.epsilonMin ?? 0.05;
+        this.epsilonDecay = options.epsilonDecay ?? 0.985;
 
-        this.maxEpisodeSteps = options.maxEpisodeSteps ?? 60;
+        this.maxEpisodeSteps = options.maxEpisodeSteps ?? 70;
         this.maxEpisodeStats = options.maxEpisodeStats ?? 80;
 
         this.currentGoalId = null;
@@ -36,6 +36,55 @@ export class QLearningBrain {
         this.episodeSteps = 0;
         this.episodeStats = [];
         this.lastTransition = null;
+
+        // Corredor de exploración entre home y shop
+        this._computeBounds();
+    }
+
+    // ----------------- Utilidades internas -----------------
+
+    _computeBounds() {
+        const poiHome = this.city.pointsOfInterest?.home;
+        const poiShop = this.city.pointsOfInterest?.shop;
+
+        if (poiHome?.entranceRoad && poiShop?.entranceRoad) {
+            const xs = [
+                poiHome.entranceRoad.gridX,
+                poiShop.entranceRoad.gridX,
+            ];
+            const zs = [
+                poiHome.entranceRoad.gridZ,
+                poiShop.entranceRoad.gridZ,
+            ];
+            const margin = 2;
+            const size = this.city.gridSize ?? 16;
+
+            this.bounds = {
+                minX: Math.max(0, Math.min(...xs) - margin),
+                maxX: Math.min(size - 1, Math.max(...xs) + margin),
+                minZ: Math.max(0, Math.min(...zs) - margin),
+                maxZ: Math.min(size - 1, Math.max(...zs) + margin),
+            };
+        } else {
+            this.bounds = null;
+        }
+    }
+
+    _inBounds(node) {
+        if (!this.bounds) return true;
+        const { minX, maxX, minZ, maxZ } = this.bounds;
+        return (
+            node.gridX >= minX &&
+            node.gridX <= maxX &&
+            node.gridZ >= minZ &&
+            node.gridZ <= maxZ
+        );
+    }
+
+    _getNeighborsBounded(node) {
+        const neighbors = getNeighbors(this.city, node) || [];
+        if (!this.bounds) return neighbors;
+        return neighbors.filter((nb) => this._inBounds(nb));
     }
 
     _stateKey(node, goalId) {
@@ -49,13 +98,16 @@ export class QLearningBrain {
         }
     }
 
+    // ----------------- API usada por el Walker -----------------
+
     /**
      * Cambiamos el objetivo de alto nivel (home / shop).
-     * No resetea la Q-table, solo empieza un nuevo episodio lógico.
      */
     setGoal(goalId, _startNode) {
         this.currentGoalId = goalId;
         this.episodeSteps = 0;
+        // Si más adelante metemos park y otros goals, aquí podríamos
+        // volver a calcular bounds según el objetivo.
     }
 
     /**
@@ -66,7 +118,7 @@ export class QLearningBrain {
         const goalId = this.currentGoalId;
         if (!goalId || !currentNode) return null;
 
-        const neighbors = getNeighbors(this.city, currentNode);
+        const neighbors = this._getNeighborsBounded(currentNode);
         if (!neighbors || neighbors.length === 0) return null;
 
         const stateKey = this._stateKey(currentNode, goalId);
@@ -115,7 +167,6 @@ export class QLearningBrain {
         const goalId = info.goalId || this.currentGoalId;
         if (!goalId || !prevNode || !newNode) return;
 
-        // Determinar si es objetivo
         let isGoal = !!info.isGoal;
         const poi = this.city.pointsOfInterest?.[goalId];
         const goalRoad = poi?.entranceRoad || null;
@@ -129,7 +180,7 @@ export class QLearningBrain {
             }
         }
 
-        // Reward simple (como cuando te funcionaba bien)
+        // Reward simple: lo que ya te funcionaba
         const reward = isGoal ? 1.0 : -0.05;
 
         const statePrev = this._stateKey(prevNode, goalId);
@@ -142,7 +193,7 @@ export class QLearningBrain {
         const rowNew = this.q.get(stateNew);
 
         // Aseguramos acciones del nuevo estado
-        const neighborsNext = getNeighbors(this.city, newNode) || [];
+        const neighborsNext = this._getNeighborsBounded(newNode) || [];
         neighborsNext.forEach((nb) => {
             const k = `${nb.gridX},${nb.gridZ}`;
             if (!rowNew.has(k)) rowNew.set(k, 0);
@@ -182,15 +233,15 @@ export class QLearningBrain {
         this.totalSteps += 1;
 
         if (isGoal || this.episodeSteps >= this.maxEpisodeSteps) {
-            this._endEpisode();
+            this._endEpisode(isGoal);
         }
     }
 
-    _endEpisode() {
-        // Guardamos estadística del episodio actual
+    _endEpisode(isGoal) {
         this.episodeStats.push({
             episode: this.episodeCount,
             steps: this.episodeSteps,
+            reachedGoal: !!isGoal,
         });
         if (this.episodeStats.length > this.maxEpisodeStats) {
             this.episodeStats.shift();
@@ -208,9 +259,8 @@ export class QLearningBrain {
         }
     }
 
-    /**
-     * Usado por el panel derecho y la gráfica.
-     */
+    // ----------------- API para UI / overlays -----------------
+
     getDebugInfo() {
         return {
             type: "q-learning",
@@ -228,7 +278,7 @@ export class QLearningBrain {
     }
 
     /**
-     * Snapshot de la Q-table para el overlay de política.
+     * Snapshot de la Q-table para un goalId concreto.
      */
     getQSnapshot(goalId) {
         const result = new Map();
@@ -242,10 +292,10 @@ export class QLearningBrain {
         }
         return result;
     }
+
     /**
-        * Alias para compatibilidad con overlays antiguos.
-        * Muchos overlays esperan getPolicySnapshot(goalId).
-    */
+     * Alias para overlays que esperen este nombre.
+     */
     getPolicySnapshot(goalId) {
         return this.getQSnapshot(goalId);
     }
