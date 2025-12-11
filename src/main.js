@@ -7,6 +7,7 @@ import { WalkerAgent } from "./agents/WalkerAgent.js";
 import { QLearningBrain } from "./agents/brains/QLearningBrain.js";
 import { PolicyOverlay } from "./visualization/policyOverlay.js";
 import { CarShortestPathBrain } from "./agents/brains/CarShortestPathBrain.js";
+import { createGridOverlay } from "./debug/gridOverlay.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("app");
@@ -17,6 +18,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const engine = createEngine(container);
   const city = createCity(engine.scene);
+
+  // Aseguramos que el contenedor permita overlays posicionados
+  container.style.position = "relative";
+
+  // Cuadrícula de depuración
+  const gridOverlay = createGridOverlay(city, engine.scene);
 
   // ================= HUD abajo izquierda =================
   const statusEl = document.createElement("div");
@@ -34,6 +41,38 @@ document.addEventListener("DOMContentLoaded", () => {
   statusEl.style.pointerEvents = "none";
   statusEl.textContent = "Ningún agente seleccionado";
   container.appendChild(statusEl);
+
+  // Toggle para mostrar/ocultar la cuadrícula de depuración
+  const gridToggleWrapper = document.createElement("label");
+  gridToggleWrapper.id = "grid-toggle-wrapper";
+  gridToggleWrapper.style.position = "absolute";
+  gridToggleWrapper.style.top = "10px";
+  gridToggleWrapper.style.right = "10px";
+  gridToggleWrapper.style.padding = "6px 10px";
+  gridToggleWrapper.style.background = "rgba(0,0,0,0.6)";
+  gridToggleWrapper.style.borderRadius = "8px";
+  gridToggleWrapper.style.display = "flex";
+  gridToggleWrapper.style.alignItems = "center";
+  gridToggleWrapper.style.gap = "6px";
+  gridToggleWrapper.style.fontFamily =
+    "system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+  gridToggleWrapper.style.fontSize = "12px";
+  gridToggleWrapper.style.color = "#fff";
+
+  const gridCheckbox = document.createElement("input");
+  gridCheckbox.type = "checkbox";
+  gridCheckbox.id = "grid-toggle";
+
+  const gridLabelText = document.createElement("span");
+  gridLabelText.textContent = "Cuadrícula";
+
+  gridToggleWrapper.appendChild(gridCheckbox);
+  gridToggleWrapper.appendChild(gridLabelText);
+  container.appendChild(gridToggleWrapper);
+
+  gridCheckbox.addEventListener("change", (e) => {
+    gridOverlay.setVisible(e.target.checked);
+  });
 
   // ================= Panel derecho del agente =================
   const sidePanel = document.createElement("div");
