@@ -10,7 +10,6 @@ import { PolicyOverlay } from "./visualization/policyOverlay.js";
 import { CarShortestPathBrain } from "./agents/brains/CarShortestPathBrain.js";
 import { createGridOverlay } from "./debug/gridOverlay.js";
 
-
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("app");
 
@@ -20,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const engine = createEngine(container);
   const city = createCity(engine.scene);
+
 
   // Aseguramos que el contenedor permita overlays posicionados
   container.style.position = "relative";
@@ -446,9 +446,10 @@ document.addEventListener("DOMContentLoaded", () => {
   engine.onUpdate((dt) => {
     const scaledDt = dt * SIM_SPEED;
 
+    // Actualizar todos los agentes
     agents.forEach((agent) => agent.update(scaledDt));
 
-    // Walker: cambio de meta home <-> shop
+    // ---------------- WALKER: cambio de meta home <-> shop ----------------
     const walkerPoi = city.pointsOfInterest?.[walkerGoal];
     if (walkerPoi && walker.isAtPOI(walkerPoi)) {
       if (walkerGoal === "shop") {
@@ -465,7 +466,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Carro: cambio de meta home <-> shop
+    // ---------------- CARRO: cambio de meta home <-> shop ----------------
     const carPoi = city.pointsOfInterest?.[carGoal];
     if (carPoi && car.isAtPOI(carPoi)) {
       if (carGoal === "shop") {
@@ -482,28 +483,28 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Actualizar panel para el agente enfocado (si tiene brain)
+    // ---------------- OVERLAY DE POLÍTICA (flechas del peatón) ----------------
+    // Se actualiza siempre a partir del QLearningBrain del walker
+    const walkerInfo = walkerBrain.getDebugInfo();
+    if (walkerInfo.episodes !== lastPolicyEpisode) {
+      policyOverlay.updateFromBrain(walkerBrain, walkerGoal);
+      lastPolicyEpisode = walkerInfo.episodes;
+    }
+
+    // ---------------- PANEL DEL AGENTE ENFOCADO ----------------
     if (
       focusedAgent &&
       focusedAgent.brain &&
       typeof focusedAgent.brain.getDebugInfo === "function"
     ) {
       const brain = focusedAgent.brain;
-      const info = brain.getDebugInfo();
+      const debugInfo = brain.getDebugInfo();
 
-      drawLearningChart(info);
-      updateModelInfo(info, focusedAgent);
-
-      // Solo el Q-Learning actualiza el overlay de política
-      if (brain instanceof QLearningBrain) {
-        if (info.episodes !== lastPolicyEpisode) {
-          policyOverlay.updateFromBrain(brain, walkerGoal);
-          lastPolicyEpisode = info.episodes;
-        }
-      }
+      drawLearningChart(debugInfo);
+      updateModelInfo(debugInfo, focusedAgent);
     }
 
-    // Cámara siguiendo al agente si hay foco
+    // ---------------- CÁMARA SIGUIENDO AL AGENTE ENFOCADO ----------------
     if (focusedAgent) {
       const targetPos = focusedAgent.getWorldPosition(
         new THREE.Vector3()
@@ -525,12 +526,6 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         engine.camera.lookAt(lookAt);
       }
-    }
-    // Actualizar flechas de política SOLO cuando avance el entrenamiento
-    const info = walkerBrain.getDebugInfo();
-    if (info.episodes !== lastPolicyEpisode) {
-      policyOverlay.updateFromBrain(walkerBrain, walkerGoal);
-      lastPolicyEpisode = info.episodes;
     }
   });
 

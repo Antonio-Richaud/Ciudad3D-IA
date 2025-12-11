@@ -4,24 +4,18 @@ import { gridToWorld } from "../city/cityScene.js";
 
 /**
  * PolicyOverlay:
- * Dibuja sobre las calles pequeños tiles coloreados + flechas,
- * según la mejor acción (política) que el QLearningBrain tiene
- * para cada nodo, para un objetivo dado.
+ * Dibuja flechas sobre las calles a partir de la Q-table de un QLearningBrain.
+ * - Para cada estado (goalId|gx,gz) toma la acción con mayor Q.
+ * - Color: de rojo (bajo Q) a verde (alto Q).
  */
 export class PolicyOverlay {
-  /**
-   * @param {object} city
-   * @param {THREE.Scene} scene
-   */
   constructor(city, scene) {
     this.city = city;
     this.scene = scene;
 
     this.group = new THREE.Group();
-    this.group.renderOrder = 10;
-    this.group.visible = true;
-
-    scene.add(this.group);
+    this.group.renderOrder = 9999; // que se pinte encima
+    this.scene.add(this.group);
   }
 
   clear() {
@@ -29,104 +23,125 @@ export class PolicyOverlay {
       const child = this.group.children.pop();
       if (child.geometry) child.geometry.dispose();
       if (child.material) child.material.dispose();
+      if (child.dispose) child.dispose();
     }
   }
 
   /**
-   * Actualiza el overlay a partir del brain y del goal actual.
-   * @param {QLearningBrain} brain
-   * @param {string} goalId
+   * brain: instancia de QLearningBrain
+   * goalId: "home" o "shop"
    */
   updateFromBrain(brain, goalId) {
-    if (!brain || typeof brain.getPolicySnapshot !== "function") return;
+    if (!brain) return;
 
-    const snapshot = brain.getPolicySnapshot(goalId);
-    if (!snapshot || snapshot.length === 0) {
+    // Soporta getPolicySnapshot() o getQSnapshot()
+    const snapshot = brain.getPolicySnapshot
+      ? brain.getPolicySnapshot(goalId)
+      : brain.getQSnapshot
+        ? brain.getQSnapshot(goalId)
+        : null;
+
+    if (!snapshot || snapshot.size === 0) {
       this.clear();
       return;
-    }
-
-    // calcular min y max Q para normalizar colores
-    let minQ = Infinity;
-    let maxQ = -Infinity;
-    for (const s of snapshot) {
-      if (s.bestQ < minQ) minQ = s.bestQ;
-      if (s.bestQ > maxQ) maxQ = s.bestQ;
-    }
-    if (!Number.isFinite(minQ) || !Number.isFinite(maxQ)) {
-      this.clear();
-      return;
-    }
-    if (minQ === maxQ) {
-      minQ -= 1;
-      maxQ += 1;
     }
 
     this.clear();
 
-    const cellSize = this.city.cellSize || 4;
-    const tileSize = cellSize * 0.35;
-    const tileHeight = 0.03;
+    // Min/Max Q para normalizar color
+    let qMin = Infinity;
+    let qMax = -Infinity;
 
-    snapshot.forEach((state) => {
-      const { gridX, gridZ, bestDir, bestQ } = state;
+    snapshot.forEach((row) => {
+      for (const q of row.values()) {
+        if (q < qMin) qMin = q;
+        if (q > qMax) qMax = q;
+      }
+    });
 
-      const basePos = gridToWorld(this.city, gridX, gridZ, 0);
+    if (!isFinite(qMin) || !isFinite(qMax) || qMax === qMin) {
+      // Todo está en cero o sin info útil
+      return;
+    }
 
-      // Q → [0,1] → color de rojo a verde
-      const t = (bestQ - minQ) / (maxQ - minQ);
-      const r = 1 - t;
-      const g = t;
-      const b = 0.2;
+    snapshot.forEach((row, stateKey) => {
+      // stateKey = `${goalId}|gx,gz`
+      const parts = stateKey.split("|");
+      if (parts.length !== 2) return;
 
-      const tileGeom = new THREE.BoxGeometry(
-        tileSize,
-        tileHeight,
-        tileSize
-      );
-      const tileMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(r, g, b),
-        transparent: true,
-        opacity: 0.5,
-        depthWrite: false,
-      });
-      const tile = new THREE.Mesh(tileGeom, tileMat);
-      tile.position.set(basePos.x, 0.06, basePos.z);
+      const [gxStr, gzStr] = parts[1].split(",");
+      const gx = parseInt(gxStr, 10);
+      const gz = parseInt(gzStr, 10);
+      if (Number.isNaN(gx) || Number.isNaN(gz)) return;
 
-      // Flecha negra encima indicando la mejor acción
-      const arrowGeom = new THREE.BoxGeometry(
-        tileSize * 0.6,
-        tileHeight * 1.5,
-        tileSize * 0.14
-      );
-      const arrowMat = new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        transparent: true,
-        opacity: 0.8,
-        depthWrite: false,
-      });
-      const arrow = new THREE.Mesh(arrowGeom, arrowMat);
-      arrow.position.set(0, tileHeight, 0);
+      // Elegimos la acción con mayor Q
+      let bestActionKey = null;
+      let bestQ = -Infinity;
 
-      switch (bestDir) {
-        case "north": // hacia -Z
-          arrow.rotation.y = 0;
-          break;
-        case "south": // hacia +Z
-          arrow.rotation.y = Math.PI;
-          break;
-        case "east": // hacia +X
-          arrow.rotation.y = Math.PI / 2;
-          break;
-        case "west": // hacia -X
-          arrow.rotation.y = -Math.PI / 2;
-          break;
-        default:
-          break;
+      for (const [aKey, q] of row.entries()) {
+        if (q > bestQ) {
+          bestQ = q;
+          bestActionKey = aKey;
+        }
       }
 
-      tile.add(arrow);
-      this.group.add(tile);
+      if (bestActionKey == null) return;
+
+      const [axStr, azStr] = bestActionKey.split(",");
+      const ax = parseInt(axStr, 10);
+      const az = parseInt(azStr, 10);
+      if (Number.isNaN(ax) || Number.isNaN(az)) return;
+
+      // Posiciones mundo (un poco por encima del piso para evitar z-fighting)
+      const fromPos = gridToWorld(this.city, gx, gz, 0.2);
+      const toPos = gridToWorld(this.city, ax, az, 0.2);
+
+      const dir = new THREE.Vector3().subVectors(toPos, fromPos);
+      const dist = dir.length();
+      if (dist < 0.01) return;
+      dir.normalize();
+
+      // Normalizamos Q para color [0,1]
+      const t = (bestQ - qMin) / (qMax - qMin);
+
+      const color = new THREE.Color().setHSL(
+        0.3 * t, // 0 = rojo, 0.3 ≈ verde
+        0.9,
+        0.5
+      );
+
+      const shaftLength = dist * 0.6;
+
+      const geom = new THREE.CylinderGeometry(
+        0.06,
+        0.06,
+        shaftLength,
+        6
+      );
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.8,
+        depthTest: false,  // 👈 esto hace que se vea encima de todo
+        depthWrite: false,
+      });
+
+      const arrow = new THREE.Mesh(geom, mat);
+
+      // Cilindro acostado
+      arrow.rotation.z = Math.PI / 2;
+
+      // Centro entre origen y destino
+      const mid = new THREE.Vector3()
+        .addVectors(fromPos, toPos)
+        .multiplyScalar(0.5);
+      arrow.position.copy(mid);
+
+      // Rotación en Y según dirección
+      const angleY = Math.atan2(dir.x, dir.z);
+      arrow.rotation.y = angleY;
+
+      this.group.add(arrow);
     });
   }
 }
