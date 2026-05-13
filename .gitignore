@@ -25,3 +25,7 @@ pnpm-debug.log*
 
 # Otros
 *.log
+
+# Security audit temporary reports
+**/npm-audit-before.json
+**/npm-audit-after.json
