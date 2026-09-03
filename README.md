@@ -9,8 +9,8 @@ El proyecto separa deliberadamente el **mundo**, el **agente físico** y su **ce
 Actualmente el proyecto incluye:
 
 - ciudad procedural de 15 x 15 celdas;
-- calles, intersecciones, banquetas, cruces peatonales, edificios y árboles;
-- modelos GLB especiales para casa, tienda y parque;
+- calles, intersecciones, banquetas, cruces peatonales, viviendas y árboles;
+- modelos GLB para viviendas, tienda, parque, pizzería y vegetación;
 - grafo navegable derivado de la red de calles;
 - peatón con Q-Learning tabular;
 - automóvil con búsqueda de ruta más corta mediante BFS;
@@ -99,7 +99,8 @@ src/
 ├── core/
 │   └── engine.js
 ├── city/
-│   └── cityScene.js
+│   ├── cityScene.js
+│   └── cityVisualSystem.js
 ├── agents/
 │   ├── CarAgent.js
 │   ├── WalkerAgent.js
@@ -114,6 +115,7 @@ src/
     └── policyOverlay.js
 
 tests/
+├── cityVisualSystem.test.js
 └── pathPlanner.test.js
 ```
 
@@ -220,10 +222,13 @@ public/models/
 Actualmente la ciudad carga directamente:
 
 - `casa.glb`
+- `casa-grande.glb`
 - `tienda.glb`
 - `parque.glb`
+- `pizzeria.glb`
+- `pino.glb`
 
-Existen otros modelos preparados para futuras expansiones del entorno.
+Por ahora no se generan torres ni edificios procedurales: los lotes ordinarios usan viviendas hasta contar con nuevos modelos de edificios diseñados específicamente para la ciudad.
 
 ## Historia conceptual
 
