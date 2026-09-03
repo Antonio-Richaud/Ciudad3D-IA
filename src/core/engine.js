@@ -31,6 +31,20 @@ export function createEngine(container) {
   controls.target.set(0, 0, 0);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
+  controls.minDistance = 10;
+  controls.maxDistance = 145;
+  controls.minPolarAngle = 0.08;
+  controls.maxPolarAngle = Math.PI / 2 - 0.035;
+
+  // Evitamos que una órbita o paneo extremo mande la cámara debajo del suelo.
+  // Conservamos el paneo horizontal, pero el plano de interés siempre queda
+  // a nivel de ciudad.
+  const keepCameraAboveGround = () => {
+    controls.target.y = 0;
+    camera.position.y = Math.max(camera.position.y, 1.2);
+  };
+
+  controls.addEventListener("change", keepCameraAboveGround);
 
   // Luces
   const hemiLight = new THREE.HemisphereLight(0x6ca9ff, 0x1f3b21, 0.8);
@@ -76,6 +90,7 @@ export function createEngine(container) {
     }
 
     controls.update();
+    keepCameraAboveGround();
     renderer.render(scene, camera);
   }
 
