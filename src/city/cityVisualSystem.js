@@ -33,18 +33,36 @@ export const MODEL_LIBRARY = Object.freeze({
   pine: Object.freeze({
     key: "pine",
     url: "/models/pino.glb",
-    // El asset original está modelado a una escala mucho mayor que las casas.
-    // Esta escala lo convierte en vegetación de acompañamiento y evita que
-    // domine el horizonte de la ciudad.
-    scale: 0.12,
+    // El GLB mide cientos de unidades en su espacio original. Con ~0.01
+    // queda en una escala urbana comparable con las casas (aprox. 4-5 m).
+    scale: 0.01,
   }),
   pizzeria: Object.freeze({
     key: "pizzeria",
     url: "/models/pizzeria.glb",
-    // El modelo tiene un footprint grande. Lo mantenemos como comercio
-    // reconocible, pero dentro del espacio asignado en la manzana.
     scale: 0.32,
   }),
+});
+
+export const PIZZERIA_LAYOUT = Object.freeze({
+  buildingCell: Object.freeze({ gridX: 10, gridZ: 4 }),
+  // El modelo estaba mostrando la fachada hacia el lado contrario.
+  // Cero radianes lo gira 180 grados respecto a la integración anterior.
+  rotationY: 0,
+  // El landmark usa una manzana completa de 2x2 y se centra en ella.
+  offsetCells: Object.freeze({ x: 0.5, z: 0.5 }),
+  reservedCells: Object.freeze([
+    Object.freeze({ gridX: 10, gridZ: 4 }),
+    Object.freeze({ gridX: 11, gridZ: 4 }),
+    Object.freeze({ gridX: 10, gridZ: 5 }),
+    Object.freeze({ gridX: 11, gridZ: 5 }),
+  ]),
+  // Dos pinos discretos en el fondo de la manzana para acompañar al comercio
+  // sin tapar la fachada ni competir con el volumen del edificio.
+  landscapePines: Object.freeze([
+    Object.freeze({ x: -0.24, z: 1.24, scale: 0.92, rotationY: 0.35 }),
+    Object.freeze({ x: 1.24, z: 1.24, scale: 1.04, rotationY: 2.1 }),
+  ]),
 });
 
 function mix32(value) {
@@ -65,8 +83,6 @@ export function hash01(gridX, gridZ, salt = 0) {
 export function getResidentialModelKey(gridX, gridZ, distFromCenter) {
   const roll = hash01(gridX, gridZ, 11);
 
-  // La casa-árbol funciona mejor como acento de barrios periféricos,
-  // no como lenguaje dominante de toda la ciudad.
   if (distFromCenter >= 5 && roll > 0.9) {
     return "treeHouse";
   }
@@ -92,8 +108,6 @@ export function getLotFacing(gridX, gridZ) {
   const zSide = modZ === 1 ? "north" : "south";
   const side = hash01(gridX, gridZ, 37) < 0.5 ? xSide : zSide;
 
-  // Los modelos se tratan como si su frente local mirara hacia +Z.
-  // Si un asset nuevo tiene otro frente, se corrige solo en su config.
   const yawBySide = {
     north: Math.PI,
     south: 0,
@@ -108,9 +122,7 @@ export function getLotFacing(gridX, gridZ) {
 }
 
 export function shouldPlacePine(gridX, gridZ, distFromCenter) {
-  // Vegetación deliberadamente escasa: los pinos son acentos del barrio,
-  // no una segunda capa de edificios en el skyline.
-  const baseChance = distFromCenter >= 5 ? 0.22 : 0.12;
+  const baseChance = distFromCenter >= 5 ? 0.18 : 0.1;
   return hash01(gridX, gridZ, 53) < baseChance;
 }
 
@@ -121,7 +133,7 @@ export function getPinePlacement(gridX, gridZ, cellSize) {
   return {
     offsetX: Math.cos(angle) * radius,
     offsetZ: Math.sin(angle) * radius,
-    scale: MODEL_LIBRARY.pine.scale * (0.88 + hash01(gridX, gridZ, 79) * 0.2),
+    scale: MODEL_LIBRARY.pine.scale * (0.9 + hash01(gridX, gridZ, 79) * 0.18),
     rotationY: hash01(gridX, gridZ, 83) * FULL_TURN,
   };
 }
