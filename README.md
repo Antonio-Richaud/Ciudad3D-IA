@@ -2,7 +2,7 @@
 
 Laboratorio experimental de simulación 3D para probar agentes inteligentes, algoritmos de navegación y aprendizaje por refuerzo dentro de una ciudad construida con Three.js.
 
-El proyecto separa deliberadamente el **mundo**, el **agente físico** y su **cerebro** para poder comparar distintos métodos de decisión sin reescribir la simulación.
+El proyecto separa deliberadamente el **mundo**, el **agente físico**, su **cerebro** y el **entorno astronómico** para poder evolucionar cada subsistema sin reescribir la simulación completa.
 
 ## Estado actual
 
@@ -18,12 +18,19 @@ Actualmente el proyecto incluye:
 - cuadrícula de depuración con coordenadas;
 - selección y seguimiento de agentes;
 - panel de métricas de aprendizaje;
-- pruebas automáticas para pathfinding;
+- cielo astronómico sincronizado con la hora real;
+- posición topocéntrica real del Sol, Luna, Mercurio, Venus, Marte, Júpiter y Saturno;
+- amanecer, atardecer y crepúsculos civil, náutico y astronómico;
+- fase lunar y fase/magnitud aparente de Venus calculadas con efemérides reales;
+- catálogo J2000 de estrellas brillantes transformado al horizonte local en tiempo real;
+- nubes procedurales que se adaptan visualmente al día, crepúsculo y noche;
+- geolocalización opcional del observador, con Puebla, México, como respaldo;
+- pruebas automáticas para navegación, sistema visual y astronomía;
 - validación continua con GitHub Actions.
 
 ## Objetivo del proyecto
 
-La ciudad funciona como un entorno de experimentación para construir y comparar agentes con distintos mecanismos de decisión.
+La ciudad funciona como un entorno de experimentación para construir y comparar agentes con distintos mecanismos de decisión dentro de un mundo visual que puede reflejar condiciones temporales y astronómicas reales.
 
 La arquitectura permite evolucionar hacia:
 
@@ -34,6 +41,9 @@ La arquitectura permite evolucionar hacia:
 - redes neuronales y Deep Reinforcement Learning;
 - ejecución de modelos mediante WebAssembly;
 - simulaciones alimentadas por datos externos;
+- meteorología en vivo;
+- catálogos estelares más profundos;
+- eventos astronómicos avanzados;
 - visualización y comparación de experimentos.
 
 ## Stack
@@ -41,6 +51,7 @@ La arquitectura permite evolucionar hacia:
 - JavaScript moderno con ES Modules
 - Vite
 - Three.js
+- Astronomy Engine
 - GLTF / GLB
 - Node.js Test Runner para pruebas unitarias
 - GitHub Actions para CI
@@ -70,6 +81,8 @@ npm run dev
 ```
 
 Vite mostrará la URL local, normalmente `http://localhost:5173`.
+
+El navegador puede solicitar permiso de ubicación. Si se concede, el cielo utiliza la latitud, longitud y altitud disponibles del dispositivo. Si se rechaza o no está disponible, se utiliza Puebla, México, como observador de respaldo.
 
 ## Validación
 
@@ -101,6 +114,10 @@ src/
 ├── city/
 │   ├── cityScene.js
 │   └── cityVisualSystem.js
+├── sky/
+│   ├── AstronomicalSky.js
+│   ├── skyMath.js
+│   └── starCatalog.js
 ├── agents/
 │   ├── CarAgent.js
 │   ├── WalkerAgent.js
@@ -115,8 +132,10 @@ src/
     └── policyOverlay.js
 
 tests/
+├── astronomyEngine.test.js
 ├── cityVisualSystem.test.js
-└── pathPlanner.test.js
+├── pathPlanner.test.js
+└── skyMath.test.js
 ```
 
 ### Motor
@@ -132,7 +151,7 @@ tests/
 - loop principal;
 - delta time.
 
-El motor no contiene lógica específica de IA o navegación.
+El motor expone las luces principales al sistema astronómico, que actualiza su dirección, intensidad y color según la posición real del Sol.
 
 ### Ciudad
 
@@ -153,6 +172,54 @@ Los principales POIs actuales son:
 - `park`
 
 Cada POI tiene una `entranceRoad` que actúa como nodo navegable de entrada.
+
+### Cielo astronómico
+
+`src/sky/AstronomicalSky.js` mantiene el cielo sincronizado con el tiempo civil real del navegador. No utiliza `SIM_SPEED`; acelerar a los agentes no acelera la Tierra ni el reloj astronómico.
+
+La posición del observador se obtiene mediante Geolocation API cuando el usuario lo autoriza. El respaldo por defecto es Puebla, México (`19.0414° N, 98.2063° O`, aproximadamente 2140 m s. n. m.).
+
+Astronomy Engine calcula coordenadas ecuatoriales y horizontales topocéntricas con correcciones astronómicas y refracción atmosférica estándar. La simulación usa esas coordenadas para posicionar:
+
+- Sol;
+- Luna;
+- Mercurio;
+- Venus;
+- Marte;
+- Júpiter;
+- Saturno;
+- estrellas brillantes del catálogo incluido.
+
+La convención geográfica del mundo 3D es:
+
+```text
++X = Este
+-Z = Norte
++Y = cenit
+```
+
+Por ello el azimut astronómico se transforma directamente a una dirección coherente dentro de la ciudad.
+
+Los estados de iluminación siguen los límites astronómicos convencionales:
+
+- día: Sol por encima del horizonte;
+- crepúsculo civil: 0° a -6°;
+- crepúsculo náutico: -6° a -12°;
+- crepúsculo astronómico: -12° a -18°;
+- noche astronómica: por debajo de -18°.
+
+La Luna usa su distancia real para determinar tamaño angular y una iluminación geométrica derivada de la dirección real del Sol. Venus y los demás planetas utilizan posición, magnitud aparente y fracción iluminada reales; por ello los cambios asociados al ciclo sinódico de Venus aparecen a partir de sus efemérides en lugar de una animación prefabricada.
+
+El catálogo estelar actual es intencionalmente ligero: contiene estrellas brillantes con coordenadas J2000 reales y las transforma al horizonte del observador en runtime. No pretende ser todavía un planetario de catálogo profundo.
+
+#### Alcance científico actual
+
+El sistema reproduce geometría y temporalidad astronómica, pero no intenta fingir precisión que todavía no implementa:
+
+- las nubes son procedurales y **no** representan nubosidad meteorológica en vivo;
+- la atmósfera es una aproximación visual con scattering de Three.js, no un modelo completo de transferencia radiativa;
+- el horizonte astronómico no incorpora todavía un perfil topográfico local de montañas;
+- conjunciones y alineaciones Sol/Luna/planetas ocurren naturalmente por las efemérides, pero fenómenos avanzados como sombra terrestre detallada durante eclipses lunares requieren una capa específica adicional.
 
 ### Agentes y brains
 
@@ -234,7 +301,9 @@ Por ahora no se generan torres ni edificios procedurales: los lotes ordinarios u
 
 El proyecto nació inicialmente como una ciudad controlada por datos externos, donde métricas podían modificar propiedades visuales como altura de edificios, color del cielo o intensidad de iluminación.
 
-La arquitectura evolucionó posteriormente hacia simulación de agentes y aprendizaje por refuerzo. La función `applyCityState()` se conserva porque esa línea de desarrollo puede volver a integrarse en el futuro sin mezclarla con la lógica de agentes.
+La arquitectura evolucionó posteriormente hacia simulación de agentes y aprendizaje por refuerzo. El cielo astronómico vuelve a incorporar datos del mundo real sin mezclarlos con la lógica de decisión de los agentes.
+
+La función `applyCityState()` se conserva porque la línea de simulación basada en métricas externas puede volver a integrarse en el futuro.
 
 ## Flujo recomendado de desarrollo
 
@@ -250,6 +319,7 @@ La arquitectura evolucionó posteriormente hacia simulación de agentes y aprend
 - `main` debe permanecer estable.
 - Los algoritmos de decisión deben vivir fuera de los agentes.
 - El grafo de navegación debe tener una sola fuente de verdad.
+- El tiempo astronómico real no debe depender de la velocidad de simulación de los agentes.
 - Los assets experimentales no deben mezclarse con los assets usados en runtime.
 - Cada cambio de lógica debe incluir pruebas cuando sea razonable.
 - Las optimizaciones no deben alterar silenciosamente el comportamiento esperado de la simulación.
@@ -261,6 +331,9 @@ La arquitectura evolucionó posteriormente hacia simulación de agentes y aprend
 - crear un grafo peatonal independiente de la red vehicular;
 - añadir pruebas para brains;
 - persistir y restaurar Q-tables;
+- integrar meteorología real para nubosidad y condiciones atmosféricas;
+- ampliar el catálogo estelar;
+- modelar eventos astronómicos avanzados y eclipses con mayor fidelidad;
 - integrar nuevos POIs y escenarios;
 - preparar benchmarking entre algoritmos;
 - evaluar A*, DQN y modelos neuronales.
