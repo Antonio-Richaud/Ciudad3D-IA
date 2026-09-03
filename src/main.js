@@ -2,6 +2,7 @@
 // src/main.js
 import * as THREE from "three";
 import { createEngine } from "./core/engine.js";
+import { createAstronomicalSky } from "./sky/AstronomicalSky.js";
 import { createCity, applyCityState } from "./city/cityScene.js";
 import { CarAgent } from "./agents/CarAgent.js";
 import { WalkerAgent } from "./agents/WalkerAgent.js";
@@ -244,11 +245,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // ================= Estado visual inicial de la ciudad =================
   const initialState = {
     buildingHeightMultiplier: 1,
-    skyColor: "#5f9df3",
     cityGlowIntensity: 0.7,
   };
 
-  applyCityState(city, initialState, engine.scene);
+  // El cielo tiene su propia fuente de verdad astronómica; el estado legado de
+  // la ciudad ya no modifica scene.background.
+  applyCityState(city, initialState);
+
+  const astronomicalSky = createAstronomicalSky({
+    engine,
+    container,
+  });
 
   const agents = [];
 
@@ -444,6 +451,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const SIM_SPEED = 20;
 
   engine.onUpdate((dt) => {
+    // El cielo avanza con tiempo real; SIM_SPEED solo acelera a los agentes.
+    astronomicalSky.update(dt);
+
     const scaledDt = dt * SIM_SPEED;
 
     // Actualizar todos los agentes
