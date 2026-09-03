@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   CITY_PALETTE,
   MODEL_LIBRARY,
+  PIZZERIA_LAYOUT,
   getLotFacing,
   getPinePlacement,
   getResidentialModelKey,
@@ -60,17 +61,23 @@ const AGENT_POI_LOTS = [
   },
 ];
 
-// Elementos visuales que no forman parte de las metas de los agentes.
 const LANDMARK_LOTS = [
   {
     id: "pizzeria",
     label: "Pizzería",
     modelUrl: MODEL_LIBRARY.pizzeria.url,
-    buildingCell: { gridX: 10, gridZ: 4 },
+    buildingCell: { ...PIZZERIA_LAYOUT.buildingCell },
     scale: MODEL_LIBRARY.pizzeria.scale,
-    rotationY: Math.PI,
-    offsetCells: { x: 0.45, z: 0.18 },
-    extraCells: [{ gridX: 11, gridZ: 4 }],
+    rotationY: PIZZERIA_LAYOUT.rotationY,
+    offsetCells: { ...PIZZERIA_LAYOUT.offsetCells },
+    extraCells: PIZZERIA_LAYOUT.reservedCells
+      .filter(
+        (cell) =>
+          cell.gridX !== PIZZERIA_LAYOUT.buildingCell.gridX ||
+          cell.gridZ !== PIZZERIA_LAYOUT.buildingCell.gridZ
+      )
+      .map((cell) => ({ ...cell })),
+    landscapePines: PIZZERIA_LAYOUT.landscapePines.map((pine) => ({ ...pine })),
     capacity: 14,
   },
 ];
@@ -143,7 +150,8 @@ function createBuildingTexture(type, gridX, gridZ) {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
 
-  ctx.fillStyle = type === "tower" ? CITY_PALETTE.tower : CITY_PALETTE.houseFallback;
+  ctx.fillStyle =
+    type === "tower" ? CITY_PALETTE.tower : CITY_PALETTE.houseFallback;
   ctx.fillRect(0, 0, size, size);
 
   const cols = type === "tower" ? 8 : 5;
@@ -160,7 +168,8 @@ function createBuildingTexture(type, gridX, gridZ) {
       const x = marginX + ix * cellW + (cellW - windowW) / 2;
       const y = marginY + iy * cellH + (cellH - windowH) / 2;
       const litChance = type === "tower" ? 0.64 : 0.4;
-      const isLit = hash01(gridX * cols + ix, gridZ * rows + iy, 101) < litChance;
+      const isLit =
+        hash01(gridX * cols + ix, gridZ * rows + iy, 101) < litChance;
 
       ctx.fillStyle = isLit
         ? CITY_PALETTE.warmWindow
@@ -442,9 +451,74 @@ function addSidewalksForCell({
   }
 }
 
-function placeVisualLot({ lot, worldX, worldZ, cellSize, scene, buildings, visualModels }) {
+function placeLandmarkLandscapePines({
+  lot,
+  worldX,
+  worldZ,
+  cellSize,
+  scene,
+  trees,
+  visualModels,
+}) {
+  for (const pine of lot.landscapePines ?? []) {
+    const pineX = worldX + pine.x * cellSize;
+    const pineZ = worldZ + pine.z * cellSize;
+
+    createModelInstance(MODEL_LIBRARY.pine.url)
+      .then((root) => {
+        root.position.set(pineX, 0, pineZ);
+        root.scale.setScalar(MODEL_LIBRARY.pine.scale * (pine.scale ?? 1));
+        root.rotation.y = pine.rotationY ?? 0;
+        root.userData.cityVisualType = `${lot.id}-landscape-pine`;
+        scene.add(root);
+        visualModels.push(root);
+        trees.push({
+          group: root,
+          gridX: lot.buildingCell.gridX,
+          gridZ: lot.buildingCell.gridZ,
+          model: "pino.glb",
+          context: lot.id,
+        });
+      })
+      .catch((error) => {
+        console.error(`Error cargando paisajismo de ${lot.id}:`, error);
+        const fallback = createFallbackTree();
+        fallback.position.set(pineX, 0, pineZ);
+        fallback.scale.setScalar(0.8);
+        scene.add(fallback);
+        trees.push({
+          group: fallback,
+          gridX: lot.buildingCell.gridX,
+          gridZ: lot.buildingCell.gridZ,
+          model: "fallback",
+          context: lot.id,
+        });
+      });
+  }
+}
+
+function placeVisualLot({
+  lot,
+  worldX,
+  worldZ,
+  cellSize,
+  scene,
+  buildings,
+  trees,
+  visualModels,
+}) {
   const offsetX = (lot.offsetCells?.x ?? 0) * cellSize;
   const offsetZ = (lot.offsetCells?.z ?? 0) * cellSize;
+
+  placeLandmarkLandscapePines({
+    lot,
+    worldX,
+    worldZ,
+    cellSize,
+    scene,
+    trees,
+    visualModels,
+  });
 
   createModelInstance(lot.modelUrl)
     .then((root) => {
@@ -637,8 +711,6 @@ export function createCity(scene) {
   const sidewalkOffsetForWalker =
     cellSize / 2 + sidewalkWidth / 2 - 0.02;
 
-  // Calles y grafo vial. Se conserva exactamente la misma lógica de celdas
-  // para no modificar navegación, pathfinding ni Q-Learning.
   for (let gridX = 0; gridX < gridSize; gridX++) {
     for (let gridZ = 0; gridZ < gridSize; gridZ++) {
       if (!isRoadCell(gridX, gridZ)) continue;
@@ -675,8 +747,6 @@ export function createCity(scene) {
     }
   }
 
-  // Cada manzana está formada por 2x2 celdas no viales. En barrios
-  // residenciales usamos una casa GLB por celda: hasta cuatro casas por cuadra.
   for (let gridX = 0; gridX < gridSize; gridX++) {
     for (let gridZ = 0; gridZ < gridSize; gridZ++) {
       if (isRoadCell(gridX, gridZ)) continue;
@@ -711,6 +781,7 @@ export function createCity(scene) {
           cellSize,
           scene,
           buildings,
+          trees,
           visualModels,
         });
         continue;
