@@ -57,11 +57,11 @@ export const PIZZERIA_LAYOUT = Object.freeze({
     Object.freeze({ gridX: 10, gridZ: 5 }),
     Object.freeze({ gridX: 11, gridZ: 5 }),
   ]),
-  // Dos pinos discretos en el fondo de la manzana para acompañar al comercio
-  // sin tapar la fachada ni competir con el volumen del edificio.
+  // La fachada queda orientada hacia +Z; por eso el paisajismo se concentra
+  // al fondo de la manzana para mantener libre la entrada y la acera frontal.
   landscapePines: Object.freeze([
-    Object.freeze({ x: -0.24, z: 1.24, scale: 0.92, rotationY: 0.35 }),
-    Object.freeze({ x: 1.24, z: 1.24, scale: 1.04, rotationY: 2.1 }),
+    Object.freeze({ x: -0.24, z: -0.24, scale: 0.92, rotationY: 0.35 }),
+    Object.freeze({ x: 1.24, z: -0.24, scale: 1.04, rotationY: 2.1 }),
   ]),
 });
 
