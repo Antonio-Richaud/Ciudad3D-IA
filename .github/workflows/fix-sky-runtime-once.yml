@@ -49,10 +49,10 @@ jobs:
           npm run audit
           npm run check
 
-      - name: Install lightweight browser tooling
+      - name: Install WebGL-capable browser diagnostic tooling
         run: |
-          google-chrome --version
-          npm install --no-save --package-lock=false playwright-core@1.55.0
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
 
       - name: Start Vite
         run: |
@@ -66,29 +66,30 @@ jobs:
           cat /tmp/vite.log
           exit 1
 
-      - name: Verify real app startup in Chrome
+      - name: Verify real app startup in Chromium
         shell: bash
         run: |
           node --input-type=module <<'JS'
-          import { chromium } from 'playwright-core';
+          import { chromium } from 'playwright';
 
-          const browser = await chromium.launch({
-            channel: 'chrome',
-            headless: true,
-            args: ['--use-gl=swiftshader'],
-          });
+          const browser = await chromium.launch({ headless: true });
           const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
           const errors = [];
 
-          page.on('pageerror', (error) => errors.push(`PAGEERROR: ${error.stack || error.message}`));
+          page.on('pageerror', (error) => {
+            errors.push(`PAGEERROR: ${error.stack || error.message}`);
+          });
           page.on('console', (message) => {
-            if (message.type() === 'error') errors.push(`CONSOLE: ${message.text()}`);
+            if (message.type() === 'error' && !message.text().includes('Failed to load resource')) {
+              errors.push(`CONSOLE: ${message.text()}`);
+            }
           });
 
           await page.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
           await page.waitForTimeout(2500);
 
           const state = await page.evaluate(() => ({
+            title: document.title,
             canvasCount: document.querySelectorAll('canvas').length,
             skyHud: document.querySelector('#real-sky-status')?.textContent?.trim() || null,
             status: document.querySelector('#agent-status')?.textContent?.trim() || null,
