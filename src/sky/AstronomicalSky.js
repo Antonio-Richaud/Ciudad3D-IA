@@ -17,7 +17,7 @@ import {
   smoothstep,
 } from "./skyMath.js";
 
-const SKY_DISTANCE = 700;
+const SKY_DISTANCE = 1_600;
 const STAR_DISTANCE = 680;
 const PLANET_DISTANCE = 640;
 const SUN_DISTANCE = 610;
@@ -155,8 +155,15 @@ function bodyHorizontal(body, date, observer) {
     equatorial.dec,
     "normal"
   );
+  const geometric = Astronomy.Horizon(
+    date,
+    observer,
+    equatorial.ra,
+    equatorial.dec,
+    null
+  );
 
-  return { equatorial, horizontal };
+  return { equatorial, horizontal, geometric };
 }
 
 function illuminationFor(body, date) {
@@ -172,6 +179,13 @@ export class AstronomicalSky {
     this.engine = engine;
     this.scene = engine.scene;
     this.container = container;
+
+    // Todo el firmamento sigue la posición de la cámara para mantener distancia
+    // angular infinita y evitar paralaje artificial al recorrer la ciudad.
+    this.celestialRoot = new THREE.Group();
+    this.celestialRoot.name = "celestial-sphere";
+    this.scene.add(this.celestialRoot);
+
     this.observerInfo = { ...FALLBACK_OBSERVER };
     this.observer = new Astronomy.Observer(
       this.observerInfo.latitude,
@@ -180,6 +194,8 @@ export class AstronomicalSky {
     );
     this.elapsedSinceAstronomyUpdate = Infinity;
     this.state = null;
+    this.solarEvents = null;
+    this.solarEventsKey = null;
 
     this.createAtmosphere();
     this.createSun();
@@ -197,10 +213,10 @@ export class AstronomicalSky {
     this.scene.background = new THREE.Color(0x02040b);
 
     this.sky = new Sky();
-    this.sky.scale.setScalar(450_000);
+    this.sky.scale.setScalar(SKY_DISTANCE);
     this.sky.frustumCulled = false;
     this.sky.renderOrder = -1000;
-    this.scene.add(this.sky);
+    this.celestialRoot.add(this.sky);
 
     const uniforms = this.sky.material.uniforms;
     uniforms.turbidity.value = 7.5;
@@ -218,7 +234,7 @@ export class AstronomicalSky {
     this.sun = new THREE.Mesh(geometry, material);
     this.sun.frustumCulled = false;
     this.sun.renderOrder = 10;
-    this.scene.add(this.sun);
+    this.celestialRoot.add(this.sun);
 
     this.sunGlow = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -233,7 +249,7 @@ export class AstronomicalSky {
     );
     this.sunGlow.frustumCulled = false;
     this.sunGlow.renderOrder = 9;
-    this.scene.add(this.sunGlow);
+    this.celestialRoot.add(this.sunGlow);
   }
 
   createMoon() {
@@ -243,7 +259,7 @@ export class AstronomicalSky {
     );
     this.moon.frustumCulled = false;
     this.moon.renderOrder = 20;
-    this.scene.add(this.moon);
+    this.celestialRoot.add(this.moon);
   }
 
   createPlanets() {
@@ -263,7 +279,7 @@ export class AstronomicalSky {
       sprite.visible = false;
       sprite.frustumCulled = false;
       sprite.renderOrder = 15;
-      this.scene.add(sprite);
+      this.celestialRoot.add(sprite);
       this.planets.set(definition.key, { definition, sprite, state: null });
     }
   }
@@ -316,7 +332,7 @@ export class AstronomicalSky {
       const points = new THREE.Points(geometry, material);
       points.frustumCulled = false;
       points.renderOrder = 5;
-      this.scene.add(points);
+      this.celestialRoot.add(points);
 
       return { ...layerDefinition, stars, geometry, material, points };
     });
@@ -394,6 +410,7 @@ export class AstronomicalSky {
           this.observerInfo.height
         );
         this.elapsedSinceAstronomyUpdate = Infinity;
+        this.solarEventsKey = null;
       },
       () => {
         // El cielo continúa funcionando con Puebla como ubicación de respaldo.
@@ -407,6 +424,7 @@ export class AstronomicalSky {
   }
 
   update(deltaSeconds) {
+    this.celestialRoot.position.copy(this.engine.camera.position);
     this.updateCloudMotion(deltaSeconds);
     this.elapsedSinceAstronomyUpdate += deltaSeconds;
 
@@ -434,11 +452,14 @@ export class AstronomicalSky {
     const sunState = bodyHorizontal(Astronomy.Body.Sun, date, this.observer);
     const moonState = bodyHorizontal(Astronomy.Body.Moon, date, this.observer);
     const moonIllumination = illuminationFor(Astronomy.Body.Moon, date);
-    const sunAltitude = sunState.horizontal.altitude;
+    // El crepúsculo se clasifica con la altura geométrica del centro
+    // solar; la posición visual conserva refracción atmosférica.
+    const sunAltitude = sunState.geometric.altitude;
     const daylight = getDaylightFactor(sunAltitude);
     const night = getNightFactor(sunAltitude);
     const twilight = getTwilightFactor(sunAltitude);
     const phase = getTwilightPhase(sunAltitude);
+    this.updateSolarEvents(date);
 
     const sunDirection = this.updateSun(sunState);
     this.updateMoon(moonState, moonIllumination, sunDirection, night);
@@ -458,6 +479,9 @@ export class AstronomicalSky {
       date,
       phase,
       observer: { ...this.observerInfo },
+      solarEvents: this.solarEvents
+        ? { ...this.solarEvents }
+        : null,
       sun: {
         altitude: sunState.horizontal.altitude,
         azimuth: sunState.horizontal.azimuth,
@@ -491,7 +515,9 @@ export class AstronomicalSky {
     this.sun.scale.setScalar(Math.max(0.01, worldRadius));
     this.sunGlow.scale.setScalar(Math.max(4, worldRadius * 7.5));
 
-    const visible = sunState.horizontal.altitude > -1.2;
+    const angularRadiusDeg = THREE.MathUtils.radToDeg(angularRadius);
+    // El disco aparece cuando su borde superior cruza el horizonte aparente.
+    const visible = sunState.horizontal.altitude > -angularRadiusDeg;
     this.sun.visible = visible;
     this.sunGlow.visible = visible;
 
@@ -507,7 +533,8 @@ export class AstronomicalSky {
     );
     const worldRadius = MOON_DISTANCE * Math.sin(angularRadius);
     this.moon.scale.setScalar(Math.max(0.01, worldRadius));
-    this.moon.visible = moonState.horizontal.altitude > -1.2;
+    const angularRadiusDeg = THREE.MathUtils.radToDeg(angularRadius);
+    this.moon.visible = moonState.horizontal.altitude > -angularRadiusDeg;
 
     this.moon.material.uniforms.sunDirection.value.copy(sunDirection);
     const phase = moonIllumination?.phase_fraction ?? 0;
@@ -683,6 +710,32 @@ export class AstronomicalSky {
     }
   }
 
+  updateSolarEvents(date) {
+    const minuteKey = `${this.observerInfo.latitude.toFixed(5)}:${this.observerInfo.longitude.toFixed(5)}:${Math.floor(date.getTime() / 60_000)}`;
+    if (minuteKey === this.solarEventsKey) return;
+
+    this.solarEventsKey = minuteKey;
+    const sunrise = Astronomy.SearchRiseSet(
+      Astronomy.Body.Sun,
+      this.observer,
+      +1,
+      date,
+      2
+    );
+    const sunset = Astronomy.SearchRiseSet(
+      Astronomy.Body.Sun,
+      this.observer,
+      -1,
+      date,
+      2
+    );
+
+    this.solarEvents = {
+      sunrise: sunrise?.date ?? null,
+      sunset: sunset?.date ?? null,
+    };
+  }
+
   updateHud() {
     if (!this.hud || !this.state) return;
 
@@ -699,6 +752,16 @@ export class AstronomicalSky {
       this.observerInfo.source === "geolocation"
         ? `GPS ${this.observerInfo.latitude.toFixed(2)}°, ${this.observerInfo.longitude.toFixed(2)}°`
         : this.observerInfo.label;
+    const formatEventTime = (value) =>
+      value
+        ? new Intl.DateTimeFormat("es-MX", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          }).format(new Date(value))
+        : "—";
+    const sunriseText = formatEventTime(this.state.solarEvents?.sunrise);
+    const sunsetText = formatEventTime(this.state.solarEvents?.sunset);
 
     const venusText =
       venus && venus.altitude > -1
@@ -708,6 +771,7 @@ export class AstronomicalSky {
     this.hud.innerHTML = `
       <div style="font-weight:650;">Cielo real · ${time}</div>
       <div>${PHASE_LABELS[this.state.phase]} · Sol ${this.state.sun.altitude.toFixed(1)}° · Luna ${this.state.moon.altitude.toFixed(1)}° (${moonPercent}%)</div>
+      <div style="opacity:.86;">Próx. salida ${sunriseText} · puesta ${sunsetText}</div>
       <div style="opacity:.82;">${venusText} · ${location}</div>
     `;
   }

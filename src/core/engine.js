@@ -23,7 +23,7 @@ export function createEngine(container) {
     60,
     container.clientWidth / container.clientHeight,
     0.1,
-    1000
+    3000
   );
   camera.position.set(45, 45, 45);
 
