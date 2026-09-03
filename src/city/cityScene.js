@@ -4,7 +4,9 @@ import {
   CITY_PALETTE,
   MODEL_LIBRARY,
   PIZZERIA_LAYOUT,
+  TREE_HOUSE_LAYOUT,
   getLotFacing,
+  getModelFitScale,
   getPinePlacement,
   getResidentialModelKey,
   getResidentialScale,
@@ -61,24 +63,39 @@ const AGENT_POI_LOTS = [
   },
 ];
 
+function getExtraReservedCells(layout) {
+  return layout.reservedCells
+    .filter(
+      (cell) =>
+        cell.gridX !== layout.buildingCell.gridX ||
+        cell.gridZ !== layout.buildingCell.gridZ
+    )
+    .map((cell) => ({ ...cell }));
+}
+
 const LANDMARK_LOTS = [
   {
     id: "pizzeria",
     label: "Pizzería",
     modelUrl: MODEL_LIBRARY.pizzeria.url,
     buildingCell: { ...PIZZERIA_LAYOUT.buildingCell },
-    scale: MODEL_LIBRARY.pizzeria.scale,
+    fit: { ...MODEL_LIBRARY.pizzeria.fit },
     rotationY: PIZZERIA_LAYOUT.rotationY,
     offsetCells: { ...PIZZERIA_LAYOUT.offsetCells },
-    extraCells: PIZZERIA_LAYOUT.reservedCells
-      .filter(
-        (cell) =>
-          cell.gridX !== PIZZERIA_LAYOUT.buildingCell.gridX ||
-          cell.gridZ !== PIZZERIA_LAYOUT.buildingCell.gridZ
-      )
-      .map((cell) => ({ ...cell })),
+    extraCells: getExtraReservedCells(PIZZERIA_LAYOUT),
     landscapePines: PIZZERIA_LAYOUT.landscapePines.map((pine) => ({ ...pine })),
     capacity: 14,
+  },
+  {
+    id: "tree-house",
+    label: "Casa árbol",
+    modelUrl: MODEL_LIBRARY.treeHouse.url,
+    buildingCell: { ...TREE_HOUSE_LAYOUT.buildingCell },
+    fit: { ...MODEL_LIBRARY.treeHouse.fit },
+    rotationY: TREE_HOUSE_LAYOUT.rotationY,
+    offsetCells: { ...TREE_HOUSE_LAYOUT.offsetCells },
+    extraCells: getExtraReservedCells(TREE_HOUSE_LAYOUT),
+    capacity: 8,
   },
 ];
 
@@ -113,6 +130,37 @@ async function createModelInstance(url) {
   });
 
   return root;
+}
+
+function fitAndPlaceVisualModel({
+  root,
+  centerX,
+  centerZ,
+  rotationY = 0,
+  fit,
+  cellSize,
+}) {
+  root.position.set(0, 0, 0);
+  root.rotation.set(0, rotationY, 0);
+  root.scale.set(1, 1, 1);
+  root.updateMatrixWorld(true);
+
+  const sourceBox = new THREE.Box3().setFromObject(root);
+  const sourceSize = sourceBox.getSize(new THREE.Vector3());
+  const scale = getModelFitScale(sourceSize, fit, cellSize);
+
+  root.scale.setScalar(scale);
+  root.updateMatrixWorld(true);
+
+  const fittedBox = new THREE.Box3().setFromObject(root);
+  const fittedCenter = fittedBox.getCenter(new THREE.Vector3());
+
+  root.position.x += centerX - fittedCenter.x;
+  root.position.z += centerZ - fittedCenter.z;
+  root.position.y += -fittedBox.min.y;
+  root.updateMatrixWorld(true);
+
+  return scale;
 }
 
 function createRoadTexture({ intersection = false } = {}) {
@@ -460,15 +508,28 @@ function placeLandmarkLandscapePines({
   trees,
   visualModels,
 }) {
-  for (const pine of lot.landscapePines ?? []) {
-    const pineX = worldX + pine.x * cellSize;
-    const pineZ = worldZ + pine.z * cellSize;
+  if (!lot.landscapePines?.length) return;
+
+  const blockCenterX = worldX + (lot.offsetCells?.x ?? 0) * cellSize;
+  const blockCenterZ = worldZ + (lot.offsetCells?.z ?? 0) * cellSize;
+
+  for (const pine of lot.landscapePines) {
+    const targetX = blockCenterX + pine.x * cellSize;
+    const targetZ = blockCenterZ + pine.z * cellSize;
 
     createModelInstance(MODEL_LIBRARY.pine.url)
       .then((root) => {
-        root.position.set(pineX, 0, pineZ);
-        root.scale.setScalar(MODEL_LIBRARY.pine.scale * (pine.scale ?? 1));
-        root.rotation.y = pine.rotationY ?? 0;
+        fitAndPlaceVisualModel({
+          root,
+          centerX: targetX,
+          centerZ: targetZ,
+          rotationY: pine.rotationY ?? 0,
+          fit: {
+            targetHeight:
+              MODEL_LIBRARY.pine.fit.targetHeight * (pine.heightScale ?? 1),
+          },
+          cellSize,
+        });
         root.userData.cityVisualType = `${lot.id}-landscape-pine`;
         scene.add(root);
         visualModels.push(root);
@@ -483,7 +544,7 @@ function placeLandmarkLandscapePines({
       .catch((error) => {
         console.error(`Error cargando paisajismo de ${lot.id}:`, error);
         const fallback = createFallbackTree();
-        fallback.position.set(pineX, 0, pineZ);
+        fallback.position.set(targetX, 0, targetZ);
         fallback.scale.setScalar(0.8);
         scene.add(fallback);
         trees.push({
@@ -507,8 +568,8 @@ function placeVisualLot({
   trees,
   visualModels,
 }) {
-  const offsetX = (lot.offsetCells?.x ?? 0) * cellSize;
-  const offsetZ = (lot.offsetCells?.z ?? 0) * cellSize;
+  const targetX = worldX + (lot.offsetCells?.x ?? 0) * cellSize;
+  const targetZ = worldZ + (lot.offsetCells?.z ?? 0) * cellSize;
 
   placeLandmarkLandscapePines({
     lot,
@@ -522,9 +583,21 @@ function placeVisualLot({
 
   createModelInstance(lot.modelUrl)
     .then((root) => {
-      root.position.set(worldX + offsetX, 0, worldZ + offsetZ);
-      root.scale.setScalar(lot.scale ?? 1);
-      root.rotation.y = lot.rotationY ?? 0;
+      if (lot.fit) {
+        fitAndPlaceVisualModel({
+          root,
+          centerX: targetX,
+          centerZ: targetZ,
+          rotationY: lot.rotationY ?? 0,
+          fit: lot.fit,
+          cellSize,
+        });
+      } else {
+        root.position.set(targetX, 0, targetZ);
+        root.scale.setScalar(lot.scale ?? 1);
+        root.rotation.y = lot.rotationY ?? 0;
+      }
+
       root.userData.cityVisualType = lot.id;
       scene.add(root);
       visualModels.push(root);
@@ -617,15 +690,20 @@ function placePine({
   trees,
   visualModels,
 }) {
-  const placement = getPinePlacement(gridX, gridZ, cellSize);
-  const pineX = worldX + placement.offsetX;
-  const pineZ = worldZ + placement.offsetZ;
+  const placement = getPinePlacement(gridX, gridZ);
+  const targetX = worldX + placement.centerOffsetX;
+  const targetZ = worldZ + placement.centerOffsetZ;
 
   createModelInstance(MODEL_LIBRARY.pine.url)
     .then((root) => {
-      root.position.set(pineX, 0, pineZ);
-      root.scale.setScalar(placement.scale);
-      root.rotation.y = placement.rotationY;
+      fitAndPlaceVisualModel({
+        root,
+        centerX: targetX,
+        centerZ: targetZ,
+        rotationY: placement.rotationY,
+        fit: { targetHeight: placement.targetHeight },
+        cellSize,
+      });
       root.userData.cityVisualType = "pine";
       scene.add(root);
       visualModels.push(root);
@@ -634,7 +712,7 @@ function placePine({
     .catch((error) => {
       console.error("Error cargando pino.glb; usando árbol fallback.", error);
       const fallback = createFallbackTree();
-      fallback.position.set(pineX, 0, pineZ);
+      fallback.position.set(targetX, 0, targetZ);
       scene.add(fallback);
       trees.push({ group: fallback, gridX, gridZ, model: "fallback" });
     });
