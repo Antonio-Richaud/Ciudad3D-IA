@@ -1,0 +1,82 @@
+name: Probe lightweight browser smoke once
+
+on:
+  push:
+    branches:
+      - feature/real-sky-cycle
+    paths:
+      - .github/workflows/browser-smoke-probe-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/real-sky-cycle
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project and browser driver
+        run: |
+          npm ci
+          npm install --no-save --package-lock=false playwright-core@1.62.1
+
+      - name: Start Vite
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/vite.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5173 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Smoke app in runner Chrome with software WebGL
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { chromium } from 'playwright-core';
+
+          const browser = await chromium.launch({
+            channel: 'chrome',
+            headless: true,
+            args: [
+              '--enable-unsafe-swiftshader',
+              '--use-angle=swiftshader',
+              '--disable-gpu-sandbox',
+            ],
+          });
+          const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+          const errors = [];
+          page.on('pageerror', (error) => errors.push(error.stack || error.message));
+          page.on('console', (message) => {
+            if (message.type() === 'error' && !message.text().includes('Failed to load resource')) {
+              errors.push(message.text());
+            }
+          });
+
+          await page.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
+          await page.waitForTimeout(1800);
+
+          const state = await page.evaluate(() => ({
+            canvases: document.querySelectorAll('canvas').length,
+            sky: document.querySelector('#real-sky-status')?.textContent?.trim() || null,
+          }));
+          console.log(JSON.stringify(state, null, 2));
+
+          if (errors.length) throw new Error(errors.join('\n'));
+          if (state.canvases < 2) throw new Error(`Expected at least 2 canvases, got ${state.canvases}`);
+          if (!state.sky?.includes('Cielo real')) throw new Error('Astronomical sky HUD did not initialize');
+
+          await browser.close();
+          JS
