@@ -4,13 +4,11 @@ import assert from "node:assert/strict";
 import {
   MODEL_LIBRARY,
   PIZZERIA_LAYOUT,
-  TREE_HOUSE_LAYOUT,
   getLotFacing,
   getModelFitScale,
   getPinePlacement,
   getResidentialModelKey,
   hash01,
-  isDowntownLot,
   shouldPlacePine,
 } from "../src/city/cityVisualSystem.js";
 
@@ -34,19 +32,6 @@ test("residential model selection never duplicates the tree-house landmark", () 
   }
 });
 
-test("tree house owns exactly one complete 2x2 block", () => {
-  const reserved = TREE_HOUSE_LAYOUT.reservedCells.map(
-    ({ gridX, gridZ }) => `${gridX},${gridZ}`
-  );
-
-  assert.deepEqual(
-    new Set(reserved),
-    new Set(["13,4", "14,4", "13,5", "14,5"])
-  );
-  assert.deepEqual(TREE_HOUSE_LAYOUT.offsetCells, { x: 0.5, z: 0.5 });
-  assert.ok(MODEL_LIBRARY.treeHouse.fit.maxWidthCells >= 1.5);
-  assert.ok(MODEL_LIBRARY.treeHouse.fit.maxHeightCells >= 1.5);
-});
 
 test("lot facing always points to one of the two adjacent roads", () => {
   const facing = getLotFacing(1, 2);
@@ -55,12 +40,6 @@ test("lot facing always points to one of the two adjacent roads", () => {
   assert.equal(typeof facing.yaw, "number");
 });
 
-test("downtown detection keeps the central district procedural", () => {
-  const halfGrid = 7;
-
-  assert.equal(isDowntownLot(7, 8, halfGrid), true);
-  assert.equal(isDowntownLot(1, 1, halfGrid), false);
-});
 
 test("model fitting uses actual visual dimensions instead of GLB pivots", () => {
   const scale = getModelFitScale(
@@ -117,4 +96,12 @@ test("pizzeria landscaping targets visual centers inside the block", () => {
     assert.ok(Math.abs(pine.z) < 0.75);
     assert.ok(pine.heightScale > 0.8 && pine.heightScale < 1.1);
   }
+});
+
+
+test("runtime model library contains only active city assets", () => {
+  assert.deepEqual(
+    Object.keys(MODEL_LIBRARY).sort(),
+    ["house", "largeHouse", "pine", "pizzeria"].sort()
+  );
 });

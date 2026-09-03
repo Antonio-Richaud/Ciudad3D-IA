@@ -4,14 +4,12 @@ import {
   CITY_PALETTE,
   MODEL_LIBRARY,
   PIZZERIA_LAYOUT,
-  TREE_HOUSE_LAYOUT,
   getLotFacing,
   getModelFitScale,
   getPinePlacement,
   getResidentialModelKey,
   getResidentialScale,
   hash01,
-  isDowntownLot,
   shouldPlacePine,
 } from "./cityVisualSystem.js";
 
@@ -85,17 +83,6 @@ const LANDMARK_LOTS = [
     extraCells: getExtraReservedCells(PIZZERIA_LAYOUT),
     landscapePines: PIZZERIA_LAYOUT.landscapePines.map((pine) => ({ ...pine })),
     capacity: 14,
-  },
-  {
-    id: "tree-house",
-    label: "Casa árbol",
-    modelUrl: MODEL_LIBRARY.treeHouse.url,
-    buildingCell: { ...TREE_HOUSE_LAYOUT.buildingCell },
-    fit: { ...MODEL_LIBRARY.treeHouse.fit },
-    rotationY: TREE_HOUSE_LAYOUT.rotationY,
-    offsetCells: { ...TREE_HOUSE_LAYOUT.offsetCells },
-    extraCells: getExtraReservedCells(TREE_HOUSE_LAYOUT),
-    capacity: 8,
   },
 ];
 
@@ -191,49 +178,6 @@ function createRoadTexture({ intersection = false } = {}) {
   return texture;
 }
 
-function createBuildingTexture(type, gridX, gridZ) {
-  const size = 128;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-
-  ctx.fillStyle =
-    type === "tower" ? CITY_PALETTE.tower : CITY_PALETTE.houseFallback;
-  ctx.fillRect(0, 0, size, size);
-
-  const cols = type === "tower" ? 8 : 5;
-  const rows = type === "tower" ? 12 : 6;
-  const marginX = 8;
-  const marginY = 8;
-  const cellW = (size - marginX * 2) / cols;
-  const cellH = (size - marginY * 2) / rows;
-  const windowW = cellW * 0.58;
-  const windowH = cellH * 0.58;
-
-  for (let iy = 0; iy < rows; iy++) {
-    for (let ix = 0; ix < cols; ix++) {
-      const x = marginX + ix * cellW + (cellW - windowW) / 2;
-      const y = marginY + iy * cellH + (cellH - windowH) / 2;
-      const litChance = type === "tower" ? 0.64 : 0.4;
-      const isLit =
-        hash01(gridX * cols + ix, gridZ * rows + iy, 101) < litChance;
-
-      ctx.fillStyle = isLit
-        ? CITY_PALETTE.warmWindow
-        : CITY_PALETTE.darkWindow;
-      ctx.fillRect(x, y, windowW, windowH);
-    }
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
-}
-
 function createFallbackTree() {
   const tree = new THREE.Group();
   const trunkHeight = 1.8;
@@ -317,74 +261,6 @@ function createCrosswalk(width, depth, stripeCount = 7) {
   }
 
   return group;
-}
-
-function createTower({ gridX, gridZ, worldX, worldZ, cellSize }) {
-  const minHeight = 11;
-  const maxHeight = 22;
-  const baseHeight = THREE.MathUtils.lerp(
-    minHeight,
-    maxHeight,
-    hash01(gridX, gridZ, 131)
-  );
-
-  const facadeTexture = createBuildingTexture("tower", gridX, gridZ);
-  const facadeMat = new THREE.MeshStandardMaterial({
-    map: facadeTexture,
-    emissiveMap: facadeTexture,
-    color: 0xffffff,
-    metalness: 0.32,
-    roughness: 0.48,
-    emissive: new THREE.Color(0x111111),
-    emissiveIntensity: 0.78,
-  });
-  const roofMat = new THREE.MeshStandardMaterial({
-    color: 0x303742,
-    roughness: 0.58,
-    metalness: 0.12,
-  });
-  const bottomMat = new THREE.MeshStandardMaterial({
-    color: 0x22252a,
-    roughness: 0.95,
-  });
-
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), [
-    facadeMat,
-    facadeMat,
-    roofMat,
-    bottomMat,
-    facadeMat,
-    facadeMat,
-  ]);
-
-  const footprint = cellSize * 0.5;
-  mesh.scale.set(footprint, baseHeight, footprint);
-  mesh.position.set(worldX, baseHeight / 2, worldZ);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-
-  const capacity = Math.round(baseHeight * 10);
-  const buildingId = `b-${gridX}-${gridZ}`;
-  mesh.userData = {
-    buildingId,
-    type: "tower",
-    baseHeight,
-    capacity,
-    gridX,
-    gridZ,
-    baseEmissiveIntensity: 0.78,
-  };
-
-  return {
-    id: buildingId,
-    mesh,
-    type: "tower",
-    capacity,
-    baseHeight,
-    gridX,
-    gridZ,
-    supportsHeightScaling: true,
-  };
 }
 
 function getVisualLotAt(gridX, gridZ) {
@@ -867,18 +743,6 @@ export function createCity(scene) {
 
       if (isReservedVisualCell(gridX, gridZ)) continue;
 
-      if (isDowntownLot(gridX, gridZ, halfGrid)) {
-        const tower = createTower({
-          gridX,
-          gridZ,
-          worldX,
-          worldZ,
-          cellSize,
-        });
-        scene.add(tower.mesh);
-        buildings.push(tower);
-        continue;
-      }
 
       placeResidentialLot({
         gridX,

@@ -7,11 +7,8 @@ export const CITY_PALETTE = Object.freeze({
   lane: "#f4f2e8",
   sidewalk: 0xd8d3c8,
   crosswalk: 0xf2d35b,
-  tower: "#253041",
   houseFallback: "#8f6b55",
   roofFallback: 0x8b4c39,
-  darkWindow: "#171a20",
-  warmWindow: "#ffd978",
   sky: 0x6ca9ff,
 });
 
@@ -25,15 +22,6 @@ export const MODEL_LIBRARY = Object.freeze({
     key: "largeHouse",
     url: "/models/casa-grande.glb",
     scale: 0.9,
-  }),
-  treeHouse: Object.freeze({
-    key: "treeHouse",
-    url: "/models/casa-arbol.glb",
-    fit: Object.freeze({
-      maxWidthCells: 1.55,
-      maxDepthCells: 1.55,
-      maxHeightCells: 1.7,
-    }),
   }),
   pine: Object.freeze({
     key: "pine",
@@ -49,18 +37,6 @@ export const MODEL_LIBRARY = Object.freeze({
       maxHeightCells: 1.3,
     }),
   }),
-});
-
-export const TREE_HOUSE_LAYOUT = Object.freeze({
-  buildingCell: Object.freeze({ gridX: 13, gridZ: 4 }),
-  rotationY: 0,
-  offsetCells: Object.freeze({ x: 0.5, z: 0.5 }),
-  reservedCells: Object.freeze([
-    Object.freeze({ gridX: 13, gridZ: 4 }),
-    Object.freeze({ gridX: 14, gridZ: 4 }),
-    Object.freeze({ gridX: 13, gridZ: 5 }),
-    Object.freeze({ gridX: 14, gridZ: 5 }),
-  ]),
 });
 
 export const PIZZERIA_LAYOUT = Object.freeze({
@@ -183,8 +159,3 @@ export function getPinePlacement(gridX, gridZ) {
   };
 }
 
-export function isDowntownLot(gridX, gridZ, halfGrid) {
-  return (
-    Math.max(Math.abs(gridX - halfGrid), Math.abs(gridZ - halfGrid)) <= 2
-  );
-}
