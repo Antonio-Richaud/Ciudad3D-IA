@@ -1,28 +1,42 @@
 {
   "name": "ciudad3d-ia",
-  "version": "0.0.1",
-  "description": "Proyecto experimental para visualizar datos en tiempo real a través de una ciudad 3D construida con **Three.js** y tecnologías web modernas.",
-  "main": "index.js",
+  "version": "0.1.0",
+  "description": "Laboratorio 3D de agentes inteligentes, navegación y aprendizaje por refuerzo construido con Three.js.",
+  "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test",
     "build": "vite build",
+    "audit": "npm audit --audit-level=low",
+    "check": "npm test && npm run build",
     "preview": "vite preview"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Antonio-Richaud/Ciudad3D-IA.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "threejs",
+    "artificial-intelligence",
+    "reinforcement-learning",
+    "q-learning",
+    "simulation",
+    "pathfinding"
+  ],
+  "author": "Antonio Richaud",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/Antonio-Richaud/Ciudad3D-IA/issues"
   },
   "homepage": "https://github.com/Antonio-Richaud/Ciudad3D-IA#readme",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "dependencies": {
-    "three": "^0.181.2"
+    "three": "^0.185.1"
   },
   "devDependencies": {
-    "vite": "^7.2.4"
+    "esbuild": "^0.28.1",
+    "vite": "^8.2.2"
   }
 }

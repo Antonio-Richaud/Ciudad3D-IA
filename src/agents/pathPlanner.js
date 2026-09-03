@@ -1,24 +1,25 @@
 // src/agents/pathPlanner.js
 
 /**
- * Llave única para un nodo de calle en el roadMap.
+ * Builds the unique key used by city.roadMap for a road node.
  */
 export function roadKey(gridX, gridZ) {
   return `${gridX},${gridZ}`;
 }
 
 /**
- * Devuelve true si hay calle en (gridX, gridZ).
+ * Returns whether a road exists at the given grid coordinates.
  */
 export function hasRoadAt(city, gridX, gridZ) {
   return city.roadMap.has(roadKey(gridX, gridZ));
 }
 
 /**
- * Vecinos (N, S, E, O) que también son celdas de calle.
- * node = { gridX, gridZ }
+ * Returns the orthogonal road neighbors for a node.
  */
 export function getNeighbors(city, node) {
+  if (!node) return [];
+
   const { gridX, gridZ } = node;
   const candidates = [
     { gridX: gridX + 1, gridZ, dir: "east" },
@@ -27,29 +28,27 @@ export function getNeighbors(city, node) {
     { gridX, gridZ: gridZ - 1, dir: "north" },
   ];
 
-  const neighbors = [];
-  for (const n of candidates) {
-    if (hasRoadAt(city, n.gridX, n.gridZ)) {
-      neighbors.push({ gridX: n.gridX, gridZ: n.gridZ, dir: n.dir });
-    }
-  }
-  return neighbors;
+  return candidates.filter((candidate) =>
+    hasRoadAt(city, candidate.gridX, candidate.gridZ)
+  );
 }
 
 /**
- * Compara dos nodos de calle.
+ * Compares two grid nodes.
  */
 export function sameNode(a, b) {
-  return a && b && a.gridX === b.gridX && a.gridZ === b.gridZ;
+  return Boolean(
+    a &&
+      b &&
+      a.gridX === b.gridX &&
+      a.gridZ === b.gridZ
+  );
 }
 
 /**
- * BFS simple para encontrar un camino más corto entre dos celdas de calle.
- * start y goal: { gridX, gridZ }
+ * Finds a shortest path between two road nodes using BFS.
  *
- * Retorna:
- * - array de nodos [{gridX,gridZ}, ...] incluyendo start y goal
- * - o null si no hay camino
+ * Returns an array including both start and goal, or null when no route exists.
  */
 export function bfsPath(city, start, goal) {
   if (!start || !goal) return null;
@@ -59,37 +58,42 @@ export function bfsPath(city, start, goal) {
   const startKey = roadKey(start.gridX, start.gridZ);
   const goalKey = roadKey(goal.gridX, goal.gridZ);
 
-  const queue = [start];
+  if (startKey === goalKey) {
+    return [{ gridX: start.gridX, gridZ: start.gridZ }];
+  }
+
+  const queue = [{ gridX: start.gridX, gridZ: start.gridZ }];
+  let queueIndex = 0;
   const visited = new Set([startKey]);
-  const parent = new Map(); // key -> {gridX, gridZ}
+  const parent = new Map();
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    const currentKey = roadKey(current.gridX, current.gridZ);
+  while (queueIndex < queue.length) {
+    const current = queue[queueIndex];
+    queueIndex += 1;
 
-    if (currentKey === goalKey) {
-      // reconstruir camino
-      const path = [];
-      let node = current;
-      while (node) {
-        path.push({ gridX: node.gridX, gridZ: node.gridZ });
-        const key = roadKey(node.gridX, node.gridZ);
-        node = parent.get(key) || null;
+    for (const neighbor of getNeighbors(city, current)) {
+      const neighborKey = roadKey(neighbor.gridX, neighbor.gridZ);
+      if (visited.has(neighborKey)) continue;
+
+      visited.add(neighborKey);
+      parent.set(neighborKey, current);
+
+      if (neighborKey === goalKey) {
+        const path = [{ gridX: neighbor.gridX, gridZ: neighbor.gridZ }];
+        let node = current;
+
+        while (node) {
+          path.push({ gridX: node.gridX, gridZ: node.gridZ });
+          node = parent.get(roadKey(node.gridX, node.gridZ)) || null;
+        }
+
+        path.reverse();
+        return path;
       }
-      path.reverse();
-      return path;
-    }
 
-    const neighbors = getNeighbors(city, current);
-    for (const n of neighbors) {
-      const key = roadKey(n.gridX, n.gridZ);
-      if (visited.has(key)) continue;
-      visited.add(key);
-      parent.set(key, current);
-      queue.push(n);
+      queue.push({ gridX: neighbor.gridX, gridZ: neighbor.gridZ });
     }
   }
 
-  // sin camino
   return null;
 }

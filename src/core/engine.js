@@ -9,16 +9,11 @@ export function createEngine(container) {
   scene.background = new THREE.Color(0x6ca9ff);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-  if ("outputColorSpace" in renderer) {
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-  } else {
-    renderer.outputEncoding = THREE.sRGBEncoding;
-  }
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
 
@@ -56,15 +51,14 @@ export function createEngine(container) {
   dirLight.shadow.camera.bottom = -80;
   scene.add(dirLight);
 
-  // Para delta time
   const clock = new THREE.Clock();
   let updateCallback = null;
 
-  // Resize
   const onResize = () => {
     const { clientWidth, clientHeight } = container;
     camera.aspect = clientWidth / clientHeight;
     camera.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(clientWidth, clientHeight);
   };
 

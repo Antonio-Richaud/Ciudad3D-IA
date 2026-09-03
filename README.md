@@ -1,365 +1,265 @@
-# 🏙️ Ciudad3D-IA
+# Ciudad3D-IA
 
-Proyecto experimental para construir una **ciudad 3D en Three.js** que sirva como _playground_ para **agentes inteligentes** (coches, peatones, futuros agentes con redes neuronales y RL).
+Laboratorio experimental de simulación 3D para probar agentes inteligentes, algoritmos de navegación y aprendizaje por refuerzo dentro de una ciudad construida con Three.js.
 
----
+El proyecto separa deliberadamente el **mundo**, el **agente físico** y su **cerebro** para poder comparar distintos métodos de decisión sin reescribir la simulación.
 
-## 🎯 Idea general
+## Estado actual
 
-- Tener una **ciudad sencilla pero estética**.
-- Añadir **agentes** (carrito, muñequito).
-- Definir **lugares importantes (POIs)**: casa, tienda, etc.
-- Probar distintos **“cerebros”** para los agentes:
-  - Camino más corto (BFS / A*).
-  - Q-Learning tabular.
-  - Más adelante: redes neuronales / Rust + WASM.
+Actualmente el proyecto incluye:
 
----
+- ciudad procedural de 15 x 15 celdas;
+- calles, intersecciones, banquetas, cruces peatonales, edificios y árboles;
+- modelos GLB especiales para casa, tienda y parque;
+- grafo navegable derivado de la red de calles;
+- peatón con Q-Learning tabular;
+- automóvil con búsqueda de ruta más corta mediante BFS;
+- visualización de la política aprendida;
+- cuadrícula de depuración con coordenadas;
+- selección y seguimiento de agentes;
+- panel de métricas de aprendizaje;
+- pruebas automáticas para pathfinding;
+- validación continua con GitHub Actions.
 
-## 🧱 Stack
+## Objetivo del proyecto
 
-- **Vite** + JavaScript.
-- **Three.js** para la escena 3D.
-- Modelos `.glb` de **casa** y **tienda** (hechos en Blender).
-- Arquitectura modular en `src/`:
-  - Motor → `core/engine.js`
-  - Ciudad → `city/cityScene.js`
-  - Agentes y cerebros → `agents/`
+La ciudad funciona como un entorno de experimentación para construir y comparar agentes con distintos mecanismos de decisión.
 
----
+La arquitectura permite evolucionar hacia:
 
-## 🚀 Cómo correr el proyecto
+- A* y otros algoritmos clásicos de búsqueda;
+- múltiples peatones y vehículos;
+- nuevos puntos de interés;
+- políticas más complejas;
+- redes neuronales y Deep Reinforcement Learning;
+- ejecución de modelos mediante WebAssembly;
+- simulaciones alimentadas por datos externos;
+- visualización y comparación de experimentos.
+
+## Stack
+
+- JavaScript moderno con ES Modules
+- Vite
+- Three.js
+- GLTF / GLB
+- Node.js Test Runner para pruebas unitarias
+- GitHub Actions para CI
+
+## Requisitos
+
+Se recomienda Node.js 22. El repositorio incluye `.nvmrc`.
+
+Con `nvm`:
 
 ```bash
-# instalar dependencias
-npm install
+nvm use
+```
 
-# levantar servidor de desarrollo
+## Instalación
+
+```bash
+git clone https://github.com/Antonio-Richaud/Ciudad3D-IA.git
+cd Ciudad3D-IA
+npm ci
+```
+
+## Desarrollo
+
+```bash
 npm run dev
 ```
 
-Luego abre el navegador en la URL que te diga Vite (normalmente `http://localhost:5173`).
+Vite mostrará la URL local, normalmente `http://localhost:5173`.
 
----
+## Validación
 
-## 📁 Estructura del proyecto
+Ejecutar pruebas:
+
+```bash
+npm test
+```
+
+Generar build de producción:
+
+```bash
+npm run build
+```
+
+Ejecutar todas las validaciones locales:
+
+```bash
+npm run check
+```
+
+## Arquitectura
 
 ```text
-Ciudad3D-IA/
-  public/
-    models/
-      casa.glb        # Casa del muñequito
-      tienda.glb      # Tienda / comercio
+src/
+├── main.js
+├── core/
+│   └── engine.js
+├── city/
+│   └── cityScene.js
+├── agents/
+│   ├── CarAgent.js
+│   ├── WalkerAgent.js
+│   ├── pathPlanner.js
+│   └── brains/
+│       ├── CarShortestPathBrain.js
+│       ├── QLearningBrain.js
+│       └── ShortestPathBrain.js
+├── debug/
+│   └── gridOverlay.js
+└── visualization/
+    └── policyOverlay.js
 
-  src/
-    main.js
-    core/
-      engine.js
-    city/
-      cityScene.js
-    agents/
-      CarAgent.js
-      WalkerAgent.js
-      pathPlanner.js
-      brains/
-        ShortestPathBrain.js
+tests/
+└── pathPlanner.test.js
 ```
 
----
+### Motor
 
-## 🏡 Modelos 3D (`public/models/`)
+`src/core/engine.js` encapsula:
 
-Aquí viven los modelos `.glb` que se cargan con `GLTFLoader`:
+- escena;
+- renderer;
+- cámara;
+- OrbitControls;
+- iluminación;
+- resize;
+- loop principal;
+- delta time.
 
-- `casa.glb` → se coloca en una manzana específica y se marca como POI `"home"`.
-- `tienda.glb` → ocupa una manzana y media aprox., marcada como POI `"shop"`.
+El motor no contiene lógica específica de IA o navegación.
 
-Rutas usadas en el código:
+### Ciudad
 
-```js
-const HOUSE_MODEL_URL = "/models/casa.glb";
-const SHOP_MODEL_URL  = "/models/tienda.glb";
+`src/city/cityScene.js` genera el entorno visual y la representación que utilizan los agentes.
+
+La ciudad mantiene un `roadMap` cuya llave tiene el formato:
+
+```text
+"gridX,gridZ"
 ```
 
----
+Cada celda de calle se convierte así en un nodo del grafo de navegación.
 
-## ⚙️ Motor (`core/engine.js`)
+Los principales POIs actuales son:
 
-Responsable de:
+- `home`
+- `shop`
+- `park`
 
-- Crear `renderer`, `scene`, `camera` y `clock`.
-- Manejar el **loop de animación** (`onUpdate`, `start()`).
-- Ajustar el canvas al tamaño del contenedor.
+Cada POI tiene una `entranceRoad` que actúa como nodo navegable de entrada.
 
-`createEngine(container)` devuelve un objeto con:
+### Agentes y brains
 
-- `scene`
-- `camera`
-- `renderer`
-- `onUpdate(callback)`
-- `start()`
+Los agentes controlan representación visual y movimiento.
 
----
+Los brains controlan decisión.
 
-## 🏗️ Ciudad (`city/cityScene.js`)
-
-Módulo principal que construye la ciudad y devuelve un objeto `city` con toda la info necesaria para los agentes.
-
-### Elementos principales
-
-- **Grid** de tamaño `gridSize x gridSize` (ej. `15 x 15`).
-- **Calles**:
-  - Distribuidas en patrón tipo “parrilla”.
-  - Cada celda de calle se registra en `city.roadMap` usando keys `"x,z"`.
-- **Texturas de calles**:
-  - Tramo normal → línea discontinua blanca.
-  - Intersecciones → asfalto limpio (los pasos peatonales se generan con geometría aparte).
-- **Banquetas**:
-  - Creadas como `BoxGeometry` alrededor de las manzanas.
-  - Altura baja (`sidewalkHeight`).
-  - Registradas en `city.sidewalks`.
-- **Acera perimetral**:
-  - Banqueta que rodea todo el mapa.
-  - Sirve como “límite visual”.
-
-### Edificios procedurales
-
-En cada manzana que **no es calle** y **no está reservada**:
-
-- Se genera un edificio tipo `tower` (zona centro) o `house` (zona suburbio).
-- Altura aleatoria dentro de un rango.
-- Material con textura de ventanas pintada en un `<canvas>`.
-
-Cada edificio se registra en `city.buildings` con:
-
-- `id`, `type`, `capacity`, `baseHeight`, `gridX`, `gridZ`.
-
-### Árboles 🌳
-
-- Grupos low-poly (tronco + copa).
-- Colocados en esquinas de la manzana, evitando chocar con edificios y banquetas.
-- Registrados en `city.trees`.
-
----
-
-## ⭐ Modelos especiales: casa y tienda
-
-En la parte superior del archivo se define:
-
-```js
-const SPECIAL_LOTS = [
-  {
-    id: "home",
-    label: "Casa",
-    modelUrl: HOUSE_MODEL_URL,
-    buildingCell: { gridX: 4, gridZ: 7 },
-    entranceRoad: { gridX: 3, gridZ: 7 },
-    scale: 1.2,
-    rotationY: Math.PI / 2,
-    capacity: 4,
-  },
-  {
-    id: "shop",
-    label: "Tienda",
-    modelUrl: SHOP_MODEL_URL,
-    buildingCell: { gridX: 10, gridZ: 7 },
-    entranceRoad: { gridX: 9, gridZ: 7 },
-    scale: 0.75,
-    rotationY: Math.PI,
-    capacity: 10,
-    extraCells: [
-      { gridX: 11, gridZ: 7 }, // manzana adicional que queda “reservada”
-    ],
-  },
-];
+```text
+Agent
+  |
+  +-- Brain
+        |
+        +-- chooseNextRoad(currentNode)
 ```
 
-Reglas:
+Esto permite sustituir el algoritmo de decisión sin modificar el movimiento del agente.
 
-- En `buildingCell` **NO** se genera edificio procedural; se carga el modelo `.glb`.
-- En `extraCells` tampoco hay edificios; es espacio libre visual.
-- `entranceRoad` indica en qué celda de calle está la **entrada peatonal**.
+### Pathfinding
 
-Al final, `createCity(scene)` devuelve algo como:
+`src/agents/pathPlanner.js` contiene las utilidades compartidas para trabajar con el grafo de calles y una implementación BFS reutilizada por los brains deterministas.
 
-```js
-{
-  ground,
-  roads,
-  sidewalks,
-  perimeterSidewalks,
-  crosswalks,
-  buildings,
-  trees,
-  roadMap,
-  pointsOfInterest,   // { home: { ... }, shop: { ... } }
-  gridSize,
-  cellSize,
-  sidewalkWidth,
-  sidewalkOffset,
-}
+### Carro
+
+`CarAgent` utiliza `CarShortestPathBrain` para recorrer rutas mínimas entre POIs.
+
+El carro siempre inicia sobre un nodo válido del `roadMap`.
+
+### Peatón
+
+`WalkerAgent` utiliza actualmente `QLearningBrain`.
+
+El estado de Q-Learning es:
+
+```text
+(goalId, gridX, gridZ)
 ```
 
----
+Las acciones son los nodos de calle adyacentes.
 
-## 🟨 Pasos peatonales
+Los parámetros principales son configurables:
 
-Los pasos cebra amarillos se generan como geometría 3D (no en la textura):
+- `alpha`
+- `gamma`
+- `epsilon`
+- `epsilonMin`
+- `epsilonDecay`
+- `goalReward`
+- `stepReward`
+- `maxEpisodeSteps`
 
-- Grupos de cajas finas (`BoxGeometry`) colocadas sobre el asfalto.
-- Generados alrededor de las intersecciones, sobre los tramos de calle que llegan al cruce.
-- Se guardan en `city.crosswalks` (útil para debug/overlays futuros).
+La exploración actual está limitada deliberadamente a un corredor alrededor de casa y tienda para acelerar el aprendizaje durante esta etapa del proyecto.
 
----
+### Visualización de política
 
-## 🤖 Agentes (`agents/`)
+`PolicyOverlay` lee la Q-table y representa la mejor acción aprendida para cada estado mediante indicadores sobre las calles.
 
-### 🚗 `CarAgent.js`
+La capa existe para poder observar el aprendizaje, no solamente el resultado final.
 
-- Agente sencillo que se mueve por las calles, girando en intersecciones.
-- Lógica aleatoria pero respetando el grafo de `roadMap`.
-- Visualmente: coche low-poly.
-- Por ahora **no está conectado** a ningún brain de IA (solo da vida a la ciudad).
+## Modelos 3D
 
-### 🧍‍♂️ `WalkerAgent.js`
+Los assets utilizados en runtime viven en:
 
-El protagonista humanoide.
+```text
+public/models/
+```
 
-**Responsabilidades:**
+Actualmente la ciudad carga directamente:
 
-- Caminar sobre banquetas alrededor de las calles.
-- Pedir al **cerebro (brain)** el siguiente nodo de calle al que debe ir.
-- Interpolar suavemente entre posiciones en mundo.
+- `casa.glb`
+- `tienda.glb`
+- `parque.glb`
 
-**Estado interno:**
+Existen otros modelos preparados para futuras expansiones del entorno.
 
-- `currentRoadNode` → nodo de calle actual `{ gridX, gridZ }`.
-- `targetRoadNode` → nodo objetivo del segmento.
+## Historia conceptual
 
-**Métodos clave:**
+El proyecto nació inicialmente como una ciudad controlada por datos externos, donde métricas podían modificar propiedades visuales como altura de edificios, color del cielo o intensidad de iluminación.
 
-- `update(dt)` → actualiza animación y movimiento.
-- `setGoal(goalId)` → configura la ruta hacia `"home"` o `"shop"`.
-- `getCurrentRoadNode()`
-- `getWorldPosition()`
-- `isAtRoadNode(node)`
-- `isAtPOI(poi)` → compara con `poi.entranceRoad`.
+La arquitectura evolucionó posteriormente hacia simulación de agentes y aprendizaje por refuerzo. La función `applyCityState()` se conserva porque esa línea de desarrollo puede volver a integrarse en el futuro sin mezclarla con la lógica de agentes.
 
-La dirección de movimiento por segmento se define así:
+## Flujo recomendado de desarrollo
 
-1. El brain devuelve el siguiente nodo de calle.
-2. `_startNextSegment()`:
-   - Usa la posición actual como inicio.
-   - Calcula la posición objetivo sobre la banqueta del nodo destino.
-   - Ajusta la rotación del muñequito hacia la dirección de movimiento.
-   - Calcula duración según distancia y `speed`.
+1. Crear una branch desde `main`.
+2. Implementar el cambio.
+3. Ejecutar `npm run check`.
+4. Revisar visualmente con `npm run dev`.
+5. Abrir Pull Request.
+6. Mergear únicamente con CI en verde.
 
----
+## Principios del repositorio
 
-## 🧠 Pathfinding y cerebros (`agents/pathPlanner.js` + `agents/brains/`)
+- `main` debe permanecer estable.
+- Los algoritmos de decisión deben vivir fuera de los agentes.
+- El grafo de navegación debe tener una sola fuente de verdad.
+- Los assets experimentales no deben mezclarse con los assets usados en runtime.
+- Cada cambio de lógica debe incluir pruebas cuando sea razonable.
+- Las optimizaciones no deben alterar silenciosamente el comportamiento esperado de la simulación.
 
-### `pathPlanner.js`
+## Roadmap inmediato
 
-Utilidades sobre el grafo de calles:
-
-- `roadKey(gridX, gridZ)` → `"x,z"`.
-- `hasRoadAt(city, gridX, gridZ)` → `boolean`.
-- `getNeighbors(city, node)` → vecinos de calle (N, S, E, O).
-- `sameNode(a, b)` → compara nodos.
-
-**`bfsPath(city, start, goal)`**
-
-- Implementa **BFS** (búsqueda en anchura).
-- Devuelve un arreglo de nodos desde `start` hasta `goal` (incluyendo ambos).
-- Si no hay camino, devuelve `null`.
-
-### `brains/ShortestPathBrain.js`
-
-Primer “cerebro” del muñequito:
-
-- Usa `bfsPath` para encontrar el camino más corto entre:
-  - Nodo actual del agente.
-  - `entranceRoad` del POI objetivo (`home`, `shop`, etc.).
-
-**Estado interno:**
-
-- `currentGoalId` → `"home"` o `"shop"`.
-- `currentPath` → lista de nodos de la ruta.
-- `pathIndex` → índice actual dentro de la ruta.
-
-**Métodos:**
-
-- `setGoal(goalId, startNode)`:
-  - Calcula ruta `startNode → poi[goalId].entranceRoad`.
-- `chooseNextRoad(currentNode)`:
-  - Devuelve el siguiente nodo de la ruta.
-  - Si el agente se sale de la ruta, la recalcula desde su posición actual.
-- `getDebugInfo()`:
-  - Info para overlays futuros (ruta, meta, etc.).
+- separar configuración de simulación de `main.js`;
+- formalizar episodios de entrenamiento y reset del entorno;
+- crear un grafo peatonal independiente de la red vehicular;
+- añadir pruebas para brains;
+- persistir y restaurar Q-tables;
+- integrar nuevos POIs y escenarios;
+- preparar benchmarking entre algoritmos;
+- evaluar A*, DQN y modelos neuronales.
 
 ---
 
-## 🎛️ Orquestador: `src/main.js`
-
-Punto de entrada de la app.
-
-**Responsabilidades:**
-
-- Crear el motor (`engine`) y la ciudad (`city`).
-- Aplicar estado visual inicial (cielo, altura de edificios, glow).
-- Instanciar agentes:
-  - `CarAgent` (carrito).
-  - `WalkerAgent` + `ShortestPathBrain`.
-- Manejar el bucle de actualización:
-  - Llamar `update(dt)` en todos los agentes.
-  - Detectar cuándo el muñequito llega a un POI.
-  - Cambiar la meta (casa ↔ tienda).
-  - Actualizar el HUD.
-
-### HUD actual
-
-Muestra:
-
-- Objetivo actual del muñequito.
-- Cuántas veces ha llegado a la tienda y a casa.
-
-Se actualiza cada que el agente completa su tarea.
-
----
-
-## 🧪 Roadmap de IA
-
-**Brain clásico listo:**
-
-- `ShortestPathBrain` + `pathPlanner` → rutas óptimas Casa ↔ Tienda.
-
-**Siguiente paso: Q-Learning**
-
-Implementar `QLearningBrain`:
-
-- Estado = `(gridX, gridZ, goalId)`.
-- Acciones = `N`, `S`, `E`, `O`.
-- Reward:
-  - `+R` al llegar al objetivo.
-  - `-r` por cada paso.
-
-Visualización de valores Q:
-
-- Flechas de colores sobre el nodo actual.
-- Panel flotante con Q-values y reward.
-
-**Más adelante:**
-
-- Reemplazar tabla `Q` por red neuronal (JS o Rust+WASM).
-- Añadir más POIs (parque, trabajo, etc.).
-- Múltiples agentes con comportamientos distintos.
-
----
-
-## 📝 Notas varias
-
-- El warning de color se corrige usando un hex de 6 dígitos: `#5f9df3`.
-- El 404 de `favicon.ico` es irrelevante para el funcionamiento.
-- Toda la parte “durote” de IA (Q-learning, NN) se montará respetando:
-  - La interfaz de `WalkerAgent` (sigue preguntando a `brain`).
-  - La estructura de `city` (`roads`, `POIs`, etc.).
+Desarrollado por Antonio Richaud.

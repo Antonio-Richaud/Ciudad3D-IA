@@ -2,26 +2,33 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Ciudad 3D – IA Playground</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Ciudad3D-IA: laboratorio 3D de agentes inteligentes, pathfinding y aprendizaje por refuerzo."
+    />
+    <meta name="theme-color" content="#05060a" />
+    <title>Ciudad3D-IA</title>
     <style>
-      * {
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
-        margin: 0;
-        padding: 0;
       }
+
       html,
-      body {
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #000;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-      }
+      body,
       #app {
         width: 100%;
         height: 100%;
+        margin: 0;
+      }
+
+      body {
+        overflow: hidden;
+        background: #05060a;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
       }
     </style>
   </head>
