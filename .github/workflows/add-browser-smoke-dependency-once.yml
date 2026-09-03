@@ -1,0 +1,44 @@
+name: Add browser smoke dependency once
+
+on:
+  push:
+    branches:
+      - feature/real-sky-cycle
+    paths:
+      - .github/workflows/add-browser-smoke-dependency-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/real-sky-cycle
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Add pinned browser driver and script
+        run: |
+          npm install --save-dev --save-exact playwright-core@1.62.1
+          npm pkg set scripts.smoke:browser="node scripts/browserSmoke.mjs"
+          npm audit --audit-level=low
+          npm run check
+          npm run smoke:browser
+
+      - name: Commit package metadata
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "test: add pinned browser smoke dependency"
+          git push origin HEAD:feature/real-sky-cycle
