@@ -1,0 +1,96 @@
+name: Browser runtime diagnostic once
+
+on:
+  push:
+    branches:
+      - feature/real-sky-cycle
+    paths:
+      - .github/workflows/browser-debug-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/real-sky-cycle
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project
+        run: npm ci
+
+      - name: Install browser diagnostic tooling
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start Vite
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/vite.log 2>&1 &
+          echo $! > /tmp/vite.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5173 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/vite.log
+          exit 1
+
+      - name: Load app in Chromium and report runtime errors
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { chromium } from 'playwright';
+
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+          const errors = [];
+
+          page.on('pageerror', (error) => {
+            errors.push(`PAGEERROR: ${error.stack || error.message}`);
+          });
+          page.on('console', (message) => {
+            if (message.type() === 'error') {
+              errors.push(`CONSOLE: ${message.text()}`);
+            }
+          });
+
+          await page.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
+          await page.waitForTimeout(2500);
+
+          const state = await page.evaluate(() => ({
+            title: document.title,
+            canvasCount: document.querySelectorAll('canvas').length,
+            skyHud: document.querySelector('#real-sky-status')?.textContent || null,
+            bodyText: document.body.innerText.slice(0, 500),
+          }));
+
+          console.log('BROWSER_STATE', JSON.stringify(state, null, 2));
+          if (errors.length) {
+            console.error(errors.join('\n\n'));
+            await browser.close();
+            process.exit(1);
+          }
+
+          if (!state.skyHud) {
+            console.error('RUNTIME_ASSERTION: #real-sky-status was not initialized.');
+            await browser.close();
+            process.exit(1);
+          }
+
+          await browser.close();
+          JS
+
+      - name: Show Vite log
+        if: always()
+        run: cat /tmp/vite.log || true
