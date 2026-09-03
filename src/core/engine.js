@@ -5,7 +5,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 export function createEngine(container) {
   const scene = new THREE.Scene();
 
-  // Cielo base (azul suave)
+  // Color de respaldo; el sistema astronómico reemplaza este fondo en runtime.
   scene.background = new THREE.Color(0x6ca9ff);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -46,7 +46,8 @@ export function createEngine(container) {
 
   controls.addEventListener("change", keepCameraAboveGround);
 
-  // Luces
+  // Luces base. Sus intensidades, colores y dirección se actualizan después
+  // con la posición astronómica real del Sol y el ciclo día/noche.
   const hemiLight = new THREE.HemisphereLight(0x6ca9ff, 0x1f3b21, 0.8);
   scene.add(hemiLight);
 
@@ -64,6 +65,7 @@ export function createEngine(container) {
   dirLight.shadow.camera.top = 80;
   dirLight.shadow.camera.bottom = -80;
   scene.add(dirLight);
+  scene.add(dirLight.target);
 
   const clock = new THREE.Clock();
   let updateCallback = null;
@@ -114,6 +116,11 @@ export function createEngine(container) {
     camera,
     renderer,
     controls,
+    lights: {
+      hemisphere: hemiLight,
+      ambient,
+      sun: dirLight,
+    },
     start,
     stop,
     onUpdate,
