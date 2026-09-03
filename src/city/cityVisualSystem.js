@@ -33,12 +33,17 @@ export const MODEL_LIBRARY = Object.freeze({
   pine: Object.freeze({
     key: "pine",
     url: "/models/pino.glb",
-    scale: 0.75,
+    // El asset original está modelado a una escala mucho mayor que las casas.
+    // Esta escala lo convierte en vegetación de acompañamiento y evita que
+    // domine el horizonte de la ciudad.
+    scale: 0.12,
   }),
   pizzeria: Object.freeze({
     key: "pizzeria",
     url: "/models/pizzeria.glb",
-    scale: 0.62,
+    // El modelo tiene un footprint grande. Lo mantenemos como comercio
+    // reconocible, pero dentro del espacio asignado en la manzana.
+    scale: 0.32,
   }),
 });
 
@@ -103,18 +108,20 @@ export function getLotFacing(gridX, gridZ) {
 }
 
 export function shouldPlacePine(gridX, gridZ, distFromCenter) {
-  const baseChance = distFromCenter >= 5 ? 0.62 : 0.42;
+  // Vegetación deliberadamente escasa: los pinos son acentos del barrio,
+  // no una segunda capa de edificios en el skyline.
+  const baseChance = distFromCenter >= 5 ? 0.22 : 0.12;
   return hash01(gridX, gridZ, 53) < baseChance;
 }
 
 export function getPinePlacement(gridX, gridZ, cellSize) {
   const angle = hash01(gridX, gridZ, 67) * FULL_TURN;
-  const radius = cellSize * (0.28 + hash01(gridX, gridZ, 71) * 0.08);
+  const radius = cellSize * (0.22 + hash01(gridX, gridZ, 71) * 0.06);
 
   return {
     offsetX: Math.cos(angle) * radius,
     offsetZ: Math.sin(angle) * radius,
-    scale: MODEL_LIBRARY.pine.scale * (0.88 + hash01(gridX, gridZ, 79) * 0.24),
+    scale: MODEL_LIBRARY.pine.scale * (0.88 + hash01(gridX, gridZ, 79) * 0.2),
     rotationY: hash01(gridX, gridZ, 83) * FULL_TURN,
   };
 }
