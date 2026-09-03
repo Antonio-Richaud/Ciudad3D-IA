@@ -4,14 +4,14 @@ import * as Astronomy from "astronomy-engine";
 
 const observer = new Astronomy.Observer(19.0414, -98.2063, 2140);
 
-function getHorizontal(body, date) {
+function getHorizontal(body, date, refraction = "normal") {
   const equatorial = Astronomy.Equator(body, date, observer, true, true);
   return Astronomy.Horizon(
     date,
     observer,
     equatorial.ra,
     equatorial.dec,
-    "normal"
+    refraction
   );
 }
 
@@ -32,6 +32,38 @@ test("Sun is below Puebla horizon around local midnight", () => {
   );
 
   assert.ok(horizontal.altitude < -30);
+});
+
+test("airless and refracted solar altitudes are independently available", () => {
+  const date = new Date("2026-09-03T12:15:00Z");
+  const geometric = getHorizontal(Astronomy.Body.Sun, date, null);
+  const apparent = getHorizontal(Astronomy.Body.Sun, date, "normal");
+
+  assert.ok(Number.isFinite(geometric.altitude));
+  assert.ok(Number.isFinite(apparent.altitude));
+  assert.ok(apparent.altitude >= geometric.altitude);
+});
+
+test("Astronomy Engine finds physical sunrise before sunset for Puebla", () => {
+  const localMidnightUtc = new Date("2026-09-03T06:00:00Z");
+  const sunrise = Astronomy.SearchRiseSet(
+    Astronomy.Body.Sun,
+    observer,
+    +1,
+    localMidnightUtc,
+    1
+  );
+  const sunset = Astronomy.SearchRiseSet(
+    Astronomy.Body.Sun,
+    observer,
+    -1,
+    localMidnightUtc,
+    1
+  );
+
+  assert.ok(sunrise?.date instanceof Date);
+  assert.ok(sunset?.date instanceof Date);
+  assert.ok(sunrise.date.getTime() < sunset.date.getTime());
 });
 
 test("Venus illumination exposes a physical phase and apparent magnitude", () => {
