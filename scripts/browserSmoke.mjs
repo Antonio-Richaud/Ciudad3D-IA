@@ -95,7 +95,9 @@ try {
   const state = await page.evaluate(() => {
     const canvases = [...document.querySelectorAll("canvas")];
     const webglCanvas = canvases.find(
-      (canvas) => canvas.width === window.innerWidth && canvas.height === window.innerHeight
+      (canvas) =>
+        canvas.clientWidth === window.innerWidth &&
+        canvas.clientHeight === window.innerHeight
     );
     const gl =
       webglCanvas?.getContext("webgl2") ||
