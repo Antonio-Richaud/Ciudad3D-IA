@@ -1,0 +1,125 @@
+name: Fix astronomical sky runtime once
+
+on:
+  push:
+    branches:
+      - feature/real-sky-cycle
+    paths:
+      - .github/workflows/fix-sky-runtime-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/real-sky-cycle
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Fix missing star visibility import
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('src/sky/AstronomicalSky.js')
+          text = path.read_text()
+          if '  getStarVisibility,\n' not in text:
+              anchor = '  getNightFactor,\n'
+              if anchor not in text:
+                  raise SystemExit('Import anchor not found')
+              text = text.replace(anchor, anchor + '  getStarVisibility,\n', 1)
+              path.write_text(text)
+          PY
+          grep -n "getStarVisibility" src/sky/AstronomicalSky.js
+
+      - name: Validate tests audit and build
+        run: |
+          npm ci
+          npm run audit
+          npm run check
+
+      - name: Install lightweight browser tooling
+        run: |
+          google-chrome --version
+          npm install --no-save --package-lock=false playwright-core@1.55.0
+
+      - name: Start Vite
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/vite.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5173 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/vite.log
+          exit 1
+
+      - name: Verify real app startup in Chrome
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { chromium } from 'playwright-core';
+
+          const browser = await chromium.launch({
+            channel: 'chrome',
+            headless: true,
+            args: ['--use-gl=swiftshader'],
+          });
+          const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+          const errors = [];
+
+          page.on('pageerror', (error) => errors.push(`PAGEERROR: ${error.stack || error.message}`));
+          page.on('console', (message) => {
+            if (message.type() === 'error') errors.push(`CONSOLE: ${message.text()}`);
+          });
+
+          await page.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
+          await page.waitForTimeout(2500);
+
+          const state = await page.evaluate(() => ({
+            canvasCount: document.querySelectorAll('canvas').length,
+            skyHud: document.querySelector('#real-sky-status')?.textContent?.trim() || null,
+            status: document.querySelector('#agent-status')?.textContent?.trim() || null,
+          }));
+
+          console.log('BROWSER_STATE', JSON.stringify(state, null, 2));
+
+          if (errors.length) {
+            console.error(errors.join('\n\n'));
+            await browser.close();
+            process.exit(1);
+          }
+          if (!state.skyHud || !state.skyHud.includes('Cielo real')) {
+            console.error('RUNTIME_ASSERTION: astronomical sky HUD did not initialize.');
+            await browser.close();
+            process.exit(1);
+          }
+          if (state.canvasCount < 2) {
+            console.error('RUNTIME_ASSERTION: expected WebGL and learning-chart canvases.');
+            await browser.close();
+            process.exit(1);
+          }
+
+          await browser.close();
+          JS
+
+      - name: Commit runtime fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/sky/AstronomicalSky.js
+          git commit -m "fix: restore astronomical sky browser startup"
+          git push origin HEAD:feature/real-sky-cycle
