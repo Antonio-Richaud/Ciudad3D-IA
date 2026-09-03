@@ -29,57 +29,56 @@ export const MODEL_LIBRARY = Object.freeze({
   treeHouse: Object.freeze({
     key: "treeHouse",
     url: "/models/casa-arbol.glb",
-    // Es una pieza especial de la ciudad, así que la hacemos más protagonista.
-    scale: 0.58,
+    fit: Object.freeze({
+      maxWidthCells: 1.55,
+      maxDepthCells: 1.55,
+      maxHeightCells: 1.7,
+    }),
   }),
   pine: Object.freeze({
     key: "pine",
     url: "/models/pino.glb",
-    // El GLB está modelado en cientos de unidades. Esta escala lo deja en
-    // proporción urbana y con suficiente margen respecto a calles y banquetas.
-    scale: 0.0085,
+    fit: Object.freeze({ targetHeight: 3.2 }),
   }),
   pizzeria: Object.freeze({
     key: "pizzeria",
     url: "/models/pizzeria.glb",
-    // Aprovecha mejor la manzana completa sin recuperar el tamaño invasivo
-    // de las primeras pruebas.
-    scale: 0.4,
+    fit: Object.freeze({
+      maxWidthCells: 1.55,
+      maxDepthCells: 1.45,
+      maxHeightCells: 1.3,
+    }),
   }),
 });
 
-// El pino de Sketchfab tiene su geometría muy desplazada respecto al origen.
-// Estos valores salen de los bounds del POSITION accessor del propio GLB.
-export const PINE_SOURCE_CENTER = Object.freeze({
-  x: (345.8518371582031 + 578.1685180664063) / 2,
-  z: (13.900848388671875 + 451.65478515625) / 2,
-});
-
-// Solo habrá una casa-árbol en toda la ciudad. La mantenemos en uno de los
-// lotes periféricos donde ya podía aparecer antes, pero ahora como landmark
-// residencial explícito y estable.
 export const TREE_HOUSE_LAYOUT = Object.freeze({
-  gridX: 13,
-  gridZ: 4,
+  buildingCell: Object.freeze({ gridX: 13, gridZ: 4 }),
+  rotationY: 0,
+  offsetCells: Object.freeze({ x: 0.5, z: 0.5 }),
+  reservedCells: Object.freeze([
+    Object.freeze({ gridX: 13, gridZ: 4 }),
+    Object.freeze({ gridX: 14, gridZ: 4 }),
+    Object.freeze({ gridX: 13, gridZ: 5 }),
+    Object.freeze({ gridX: 14, gridZ: 5 }),
+  ]),
 });
 
 export const PIZZERIA_LAYOUT = Object.freeze({
   buildingCell: Object.freeze({ gridX: 10, gridZ: 4 }),
   rotationY: 0,
-  // El asset no está centrado respecto a su origen. Este offset lo desplaza
-  // hacia el centro visual de la manzana y lo retira de la acera frontal.
-  offsetCells: Object.freeze({ x: 0.88, z: 0.08 }),
+  // Este punto representa el centro VISUAL de la manzana, no el pivote del GLB.
+  offsetCells: Object.freeze({ x: 0.5, z: 0.5 }),
   reservedCells: Object.freeze([
     Object.freeze({ gridX: 10, gridZ: 4 }),
     Object.freeze({ gridX: 11, gridZ: 4 }),
     Object.freeze({ gridX: 10, gridZ: 5 }),
     Object.freeze({ gridX: 11, gridZ: 5 }),
   ]),
-  // Coordenadas de raíz compensadas por el pivote desplazado de pino.glb.
-  // Visualmente ambos árboles quedan dentro del terreno, detrás del comercio.
+  // Posiciones relativas al centro visual de la manzana. El runtime centra
+  // también la geometría real de cada pino, así que nunca dependen de su pivote.
   landscapePines: Object.freeze([
-    Object.freeze({ x: -0.51, z: -0.16, scale: 0.9, rotationY: 0.35 }),
-    Object.freeze({ x: 0.44, z: -0.18, scale: 1.0, rotationY: 2.1 }),
+    Object.freeze({ x: -0.62, z: -0.52, heightScale: 0.92, rotationY: 0.35 }),
+    Object.freeze({ x: 0.62, z: -0.52, heightScale: 1.02, rotationY: 2.1 }),
   ]),
 });
 
@@ -98,20 +97,30 @@ export function hash01(gridX, gridZ, salt = 0) {
   return mix32(seed) / 0xffffffff;
 }
 
-export function isTreeHouseLot(gridX, gridZ) {
-  return gridX === TREE_HOUSE_LAYOUT.gridX && gridZ === TREE_HOUSE_LAYOUT.gridZ;
+export function getModelFitScale(size, fit = {}, cellSize = CITY_CELL_SIZE) {
+  const ratios = [];
+
+  const addRatio = (limit, dimension) => {
+    if (
+      Number.isFinite(limit) &&
+      limit > 0 &&
+      Number.isFinite(dimension) &&
+      dimension > 0
+    ) {
+      ratios.push(limit / dimension);
+    }
+  };
+
+  addRatio(fit.targetHeight, size.y);
+  addRatio(fit.maxWidthCells * cellSize, size.x);
+  addRatio(fit.maxDepthCells * cellSize, size.z);
+  addRatio(fit.maxHeightCells * cellSize, size.y);
+
+  return ratios.length > 0 ? Math.min(...ratios) : 1;
 }
 
 export function getResidentialModelKey(gridX, gridZ, distFromCenter) {
-  if (isTreeHouseLot(gridX, gridZ)) {
-    return "treeHouse";
-  }
-
   const roll = hash01(gridX, gridZ, 11);
-
-  // El resto del barrio alterna únicamente casas normales y casas grandes.
-  // distFromCenter se conserva en la firma para poder volver a zonificar más
-  // adelante sin romper a los consumidores actuales.
   void distFromCenter;
 
   if (roll > 0.68) {
@@ -124,7 +133,7 @@ export function getResidentialModelKey(gridX, gridZ, distFromCenter) {
 export function getResidentialScale(modelKey, gridX, gridZ) {
   const model = MODEL_LIBRARY[modelKey] ?? MODEL_LIBRARY.house;
   const variation = 0.96 + hash01(gridX, gridZ, 23) * 0.08;
-  return model.scale * variation;
+  return (model.scale ?? 1) * variation;
 }
 
 export function getLotFacing(gridX, gridZ) {
@@ -149,31 +158,27 @@ export function getLotFacing(gridX, gridZ) {
 }
 
 export function shouldPlacePine(gridX, gridZ, distFromCenter) {
-  const baseChance = distFromCenter >= 5 ? 0.16 : 0.08;
+  const baseChance = distFromCenter >= 5 ? 0.12 : 0.06;
   return hash01(gridX, gridZ, 53) < baseChance;
 }
 
-export function getPinePlacement(gridX, gridZ, cellSize = CITY_CELL_SIZE) {
-  const angle = hash01(gridX, gridZ, 67) * FULL_TURN;
-  const radius = cellSize * (0.09 + hash01(gridX, gridZ, 71) * 0.04);
-  const scale =
-    MODEL_LIBRARY.pine.scale * (0.92 + hash01(gridX, gridZ, 79) * 0.14);
-
-  // Primero elegimos dónde queremos ver el centro del árbol dentro del lote.
-  const visualCenterOffsetX = Math.cos(angle) * radius;
-  const visualCenterOffsetZ = Math.sin(angle) * radius;
-
-  // Después compensamos el origen desplazado del GLB para que la geometría,
-  // y no solo su pivote, quede realmente dentro de la propiedad.
-  const pivotOffsetX = PINE_SOURCE_CENTER.x * scale;
-  const pivotOffsetZ = PINE_SOURCE_CENTER.z * scale;
+export function getPinePlacement(gridX, gridZ) {
+  const corner = Math.floor(hash01(gridX, gridZ, 67) * 4) % 4;
+  const signs = [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ][corner];
+  const jitterX = (hash01(gridX, gridZ, 71) - 0.5) * 0.28;
+  const jitterZ = (hash01(gridX, gridZ, 73) - 0.5) * 0.28;
 
   return {
-    offsetX: visualCenterOffsetX - pivotOffsetX,
-    offsetZ: visualCenterOffsetZ - pivotOffsetZ,
-    visualCenterOffsetX,
-    visualCenterOffsetZ,
-    scale,
+    centerOffsetX: signs[0] * 1.18 + jitterX,
+    centerOffsetZ: signs[1] * 1.18 + jitterZ,
+    targetHeight:
+      MODEL_LIBRARY.pine.fit.targetHeight *
+      (0.9 + hash01(gridX, gridZ, 79) * 0.16),
     rotationY: hash01(gridX, gridZ, 83) * FULL_TURN,
   };
 }
