@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   MODEL_LIBRARY,
+  PIZZERIA_LAYOUT,
   getLotFacing,
   getPinePlacement,
   getResidentialModelKey,
@@ -41,11 +42,11 @@ test("downtown detection keeps the central district procedural", () => {
   assert.equal(isDowntownLot(1, 1, halfGrid), false);
 });
 
-test("pine placement stays at neighborhood scale", () => {
+test("pine placement stays at human-scale landscaping size", () => {
   const placement = getPinePlacement(1, 1, 7);
 
   assert.ok(placement.scale > 0);
-  assert.ok(placement.scale < 0.15);
+  assert.ok(placement.scale < 0.012);
   assert.ok(Math.abs(placement.offsetX) < 2.1);
   assert.ok(Math.abs(placement.offsetZ) < 2.1);
 });
@@ -56,6 +57,27 @@ test("pine density remains intentionally sparse", () => {
 
   assert.equal(first, second);
   assert.equal(typeof first, "boolean");
+});
+
+test("pizzeria occupies one complete 2x2 city block", () => {
+  const reserved = PIZZERIA_LAYOUT.reservedCells.map(
+    ({ gridX, gridZ }) => `${gridX},${gridZ}`
+  );
+
+  assert.deepEqual(
+    new Set(reserved),
+    new Set(["10,4", "11,4", "10,5", "11,5"])
+  );
+  assert.deepEqual(PIZZERIA_LAYOUT.offsetCells, { x: 0.5, z: 0.5 });
+});
+
+test("pizzeria facade is flipped toward the opposite sidewalk", () => {
+  assert.equal(PIZZERIA_LAYOUT.rotationY, 0);
+});
+
+test("pizzeria landscaping stays behind the entrance", () => {
+  assert.ok(PIZZERIA_LAYOUT.landscapePines.length >= 2);
+  assert.ok(PIZZERIA_LAYOUT.landscapePines.every((pine) => pine.z < 0));
 });
 
 test("large commercial landmark scale remains contained", () => {
