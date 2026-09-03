@@ -1,0 +1,77 @@
+name: Integrate real sky once
+
+on:
+  push:
+    branches:
+      - feature/real-sky-cycle
+    paths:
+      - .github/workflows/integrate-real-sky-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/real-sky-cycle
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Integrate astronomical sky into main loop
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('src/main.js')
+          text = path.read_text()
+
+          old_import = 'import { createEngine } from "./core/engine.js";\n'
+          new_import = old_import + 'import { createAstronomicalSky } from "./sky/AstronomicalSky.js";\n'
+          if 'createAstronomicalSky' not in text:
+              if old_import not in text:
+                  raise SystemExit('Engine import anchor not found')
+              text = text.replace(old_import, new_import, 1)
+
+          old_state = '''  const initialState = {\n    buildingHeightMultiplier: 1,\n    skyColor: "#5f9df3",\n    cityGlowIntensity: 0.7,\n  };\n\n  applyCityState(city, initialState, engine.scene);\n\n  const agents = [];\n'''
+          new_state = '''  const initialState = {\n    buildingHeightMultiplier: 1,\n    cityGlowIntensity: 0.7,\n  };\n\n  // El cielo tiene su propia fuente de verdad astronómica; el estado legado de\n  // la ciudad ya no modifica scene.background.\n  applyCityState(city, initialState);\n\n  const astronomicalSky = createAstronomicalSky({\n    engine,\n    container,\n  });\n\n  const agents = [];\n'''
+          if 'const astronomicalSky = createAstronomicalSky' not in text:
+              if old_state not in text:
+                  raise SystemExit('Initial city state anchor not found')
+              text = text.replace(old_state, new_state, 1)
+
+          old_loop = '''  engine.onUpdate((dt) => {\n    const scaledDt = dt * SIM_SPEED;\n'''
+          new_loop = '''  engine.onUpdate((dt) => {\n    // El cielo avanza con tiempo real; SIM_SPEED solo acelera a los agentes.\n    astronomicalSky.update(dt);\n\n    const scaledDt = dt * SIM_SPEED;\n'''
+          if 'astronomicalSky.update(dt)' not in text:
+              if old_loop not in text:
+                  raise SystemExit('Main update loop anchor not found')
+              text = text.replace(old_loop, new_loop, 1)
+
+          path.write_text(text)
+          PY
+
+          grep -n "createAstronomicalSky\|astronomicalSky.update" src/main.js
+
+      - name: Validate
+        run: |
+          npm ci
+          npm run audit
+          npm run check
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.js
+          git commit -m "feat: connect astronomical sky to simulation clock"
+          git push origin HEAD:feature/real-sky-cycle
