@@ -2,10 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  MODEL_LIBRARY,
   getLotFacing,
+  getPinePlacement,
   getResidentialModelKey,
   hash01,
   isDowntownLot,
+  shouldPlacePine,
 } from "../src/city/cityVisualSystem.js";
 
 test("city visual hash is deterministic and normalized", () => {
@@ -36,4 +39,26 @@ test("downtown detection keeps the central district procedural", () => {
 
   assert.equal(isDowntownLot(7, 8, halfGrid), true);
   assert.equal(isDowntownLot(1, 1, halfGrid), false);
+});
+
+test("pine placement stays at neighborhood scale", () => {
+  const placement = getPinePlacement(1, 1, 7);
+
+  assert.ok(placement.scale > 0);
+  assert.ok(placement.scale < 0.15);
+  assert.ok(Math.abs(placement.offsetX) < 2.1);
+  assert.ok(Math.abs(placement.offsetZ) < 2.1);
+});
+
+test("pine density remains intentionally sparse", () => {
+  const first = shouldPlacePine(1, 1, 6);
+  const second = shouldPlacePine(1, 1, 6);
+
+  assert.equal(first, second);
+  assert.equal(typeof first, "boolean");
+});
+
+test("large commercial landmark scale remains contained", () => {
+  assert.ok(MODEL_LIBRARY.pizzeria.scale <= 0.35);
+  assert.ok(MODEL_LIBRARY.pizzeria.scale > 0);
 });
