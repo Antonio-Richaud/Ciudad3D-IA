@@ -105,8 +105,8 @@ jobs:
               tests,
               flags=re.S,
           )
-          if 'retired tree-house model is no longer part of the runtime library' not in tests:
-              tests += '''\n\ntest("retired tree-house model is no longer part of the runtime library", () => {\n  assert.equal("treeHouse" in MODEL_LIBRARY, false);\n});\n'''
+          if 'runtime model library contains only active city assets' not in tests:
+              tests += '''\n\ntest("runtime model library contains only active city assets", () => {\n  assert.deepEqual(\n    Object.keys(MODEL_LIBRARY).sort(),\n    ["house", "largeHouse", "pine", "pizzeria"].sort()\n  );\n});\n'''
           test_path.write_text(tests)
 
           readme_path = Path('README.md')
