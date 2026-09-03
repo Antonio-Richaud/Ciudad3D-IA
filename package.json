@@ -33,6 +33,7 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
+    "astronomy-engine": "^2.1.19",
     "three": "^0.185.1"
   },
   "devDependencies": {
