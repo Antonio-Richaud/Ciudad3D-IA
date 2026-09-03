@@ -38,6 +38,7 @@ jobs:
       - name: Run tests and build
         run: npm run check
 
+      # Build-time checks cannot catch browser-only WebGL/runtime failures.
       - name: Smoke browser runtime
         shell: bash
         run: |
