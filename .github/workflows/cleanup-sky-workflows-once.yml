@@ -1,0 +1,38 @@
+name: Cleanup sky diagnostics once
+
+on:
+  push:
+    branches:
+      - feature/real-sky-cycle
+    paths:
+      - .github/workflows/cleanup-sky-workflows-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/real-sky-cycle
+          fetch-depth: 0
+
+      - name: Remove temporary workflows
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm \
+            .github/workflows/add-browser-smoke-dependency-once.yml \
+            .github/workflows/add-browser-smoke-dependency-v2-once.yml \
+            .github/workflows/browser-debug-once.yml \
+            .github/workflows/browser-smoke-probe-once.yml \
+            .github/workflows/fix-sky-runtime-once.yml \
+            .github/workflows/cleanup-sky-workflows-once.yml
+          git commit -m "chore: remove temporary sky diagnostics"
+          git pull --rebase origin feature/real-sky-cycle
+          git push origin HEAD:feature/real-sky-cycle
