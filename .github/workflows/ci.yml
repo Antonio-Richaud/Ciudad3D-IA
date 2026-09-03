@@ -37,3 +37,29 @@ jobs:
 
       - name: Run tests and build
         run: npm run check
+
+      # Build-time checks cannot catch browser-only WebGL/runtime failures.
+      - name: Smoke browser runtime
+        shell: bash
+        run: |
+          ./node_modules/.bin/vite --host 127.0.0.1 --port 5173 --strictPort > /tmp/city3d-vite.log 2>&1 &
+          VITE_PID=$!
+          trap 'kill "$VITE_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5173 >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$VITE_PID" 2>/dev/null; then
+              cat /tmp/city3d-vite.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if ! curl -fsS http://127.0.0.1:5173 >/dev/null; then
+            cat /tmp/city3d-vite.log
+            exit 1
+          fi
+
+          npm run smoke:browser
