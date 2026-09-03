@@ -94,7 +94,7 @@ jobs:
           tests = tests.replace('  TREE_HOUSE_LAYOUT,\n', '')
           tests = tests.replace('  isDowntownLot,\n', '')
           tests = re.sub(
-              r'\ntest\("exactly one lot is designated as the tree-house landmark".*?\n\}\);\n',
+              r'\ntest\("tree house owns exactly one complete 2x2 block".*?\n\}\);\n',
               '\n',
               tests,
               flags=re.S,
@@ -105,11 +105,8 @@ jobs:
               tests,
               flags=re.S,
           )
-          anchor = '''test("residential model selection is deterministic", () => {\n  const first = getResidentialModelKey(1, 1, 6);\n  const second = getResidentialModelKey(1, 1, 6);\n\n  assert.equal(first, second);\n  assert.ok(["house", "largeHouse"].includes(first));\n});\n'''
-          replacement = anchor + '''\ntest("retired tree-house model is no longer part of the runtime library", () => {\n  assert.equal("treeHouse" in MODEL_LIBRARY, false);\n});\n'''
-          if anchor not in tests:
-              raise SystemExit('Could not find residential model test anchor')
-          tests = tests.replace(anchor, replacement)
+          if 'retired tree-house model is no longer part of the runtime library' not in tests:
+              tests += '''\n\ntest("retired tree-house model is no longer part of the runtime library", () => {\n  assert.equal("treeHouse" in MODEL_LIBRARY, false);\n});\n'''
           test_path.write_text(tests)
 
           readme_path = Path('README.md')
@@ -140,6 +137,11 @@ jobs:
 
           git rm public/models/casa-arbol.glb
 
+          if grep -R -n -E 'casa-arbol|treeHouse|TREE_HOUSE_LAYOUT|createTower|isDowntownLot|createBuildingTexture' src tests; then
+            echo "Retired city references still present"
+            exit 1
+          fi
+
       - name: Validate
         run: |
           npm ci
@@ -151,6 +153,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/city/cityScene.js src/city/cityVisualSystem.js tests/cityVisualSystem.test.js README.md public/models/casa-arbol.glb
+          git add -A
           git commit -m "chore: remove tree house and procedural towers"
           git push origin HEAD:feature/city-visual-system
