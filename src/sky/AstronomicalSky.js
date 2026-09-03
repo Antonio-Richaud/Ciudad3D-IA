@@ -10,6 +10,7 @@ import {
   equatorialToUnitVector,
   getDaylightFactor,
   getNightFactor,
+  getStarVisibility,
   getTwilightFactor,
   getTwilightPhase,
   horizontalToWorld,
