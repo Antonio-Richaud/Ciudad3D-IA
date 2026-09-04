@@ -57,6 +57,12 @@ try {
       webglContextAlive: Boolean(gl && !gl.isContextLost()),
       forestReady: document.documentElement.dataset.forestReady || null,
       forestTiles: Number(document.documentElement.dataset.forestTiles || 0),
+      forestGrassColor:
+        document.documentElement.dataset.forestGrassColor || null,
+      forestGroundHidden:
+        document.documentElement.dataset.forestGroundHidden || null,
+      forestGroundMesh:
+        document.documentElement.dataset.forestGroundMesh || null,
     };
   });
 
@@ -78,6 +84,9 @@ try {
     throw new Error(
       `Forest boundary did not initialize correctly (${state.forestTiles} tiles).`
     );
+  }
+  if (!state.forestGrassColor?.startsWith("#")) {
+    throw new Error("Forest grass color could not be detected from the GLB.");
   }
 } finally {
   await browser.close();
