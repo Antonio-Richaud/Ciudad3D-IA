@@ -29,6 +29,8 @@ function loadForestPrototype() {
   return forestPrototypePromise;
 }
 
+// El GLB se mide con bounds reales en runtime; no dependemos de su pivote,
+// orientación ni escala de exportación para colocarlo alrededor de la ciudad.
 function prepareForestTile(prototype, cellSize) {
   const model = prototype.clone(true);
   model.position.set(0, 0, 0);
