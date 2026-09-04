@@ -40,7 +40,7 @@ test("forest layout surrounds every side with every requested layer", () => {
   }
 });
 
-test("first forest layer overlaps the city edge so no transition gap is visible", () => {
+test("first forest layer aligns exactly with the city edge", () => {
   const tileDepth = 14;
   const layout = createForestRingLayout({
     halfGround: HALF_GROUND,
@@ -58,17 +58,58 @@ test("first forest layer overlaps the city edge so no transition gap is visible"
     return radialCenter - tileDepth / 2;
   });
 
-  assert.ok(Math.max(...innerEdges) <= HALF_GROUND);
-  assert.ok(Math.min(...innerEdges) >= HALF_GROUND - tileDepth * 0.06);
+  for (const edge of innerEdges) {
+    assert.ok(Math.abs(edge - HALF_GROUND) < 1e-9);
+  }
 });
 
-test("forest layout is deterministic and staggered between layers", () => {
+test("forest rows do not overlap coplanar plates", () => {
+  const tileWidth = 42;
+  const tileDepth = 14;
+  const layout = createForestRingLayout({
+    halfGround: HALF_GROUND,
+    cellSize: CELL_SIZE,
+    tileWidth,
+    tileDepth,
+    layers: 3,
+  });
+
+  assert.ok(layout.tangentialSpacing >= tileWidth - 1e-9);
+  assert.ok(layout.radialSpacing >= tileDepth - 1e-9);
+});
+
+test("first forest row has no position or angle jitter", () => {
+  const layout = createForestRingLayout({
+    halfGround: HALF_GROUND,
+    cellSize: CELL_SIZE,
+    tileWidth: 42,
+    tileDepth: 14,
+    layers: 2,
+  });
+
+  const baseAngles = {
+    north: 0,
+    south: Math.PI,
+    east: Math.PI / 2,
+    west: -Math.PI / 2,
+  };
+
+  for (const tile of layout.placements.filter((item) => item.layer === 0)) {
+    const base = baseAngles[tile.side];
+    const deltaModuloHalfTurn = Math.abs(
+      Math.sin(tile.rotationY - base)
+    );
+    assert.ok(deltaModuloHalfTurn < 1e-9);
+  }
+});
+
+test("forest layout is deterministic and staggered between deeper layers", () => {
   const options = {
     halfGround: HALF_GROUND,
     cellSize: CELL_SIZE,
     tileWidth: 45,
     tileDepth: 12,
-    layers: 2,
+    layers: 3,
   };
   const first = createForestRingLayout(options);
   const second = createForestRingLayout(options);
