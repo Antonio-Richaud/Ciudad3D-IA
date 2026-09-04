@@ -2,6 +2,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+import { createForestBoundary } from "../city/forestBoundary.js";
+
 export function createEngine(container) {
   const scene = new THREE.Scene();
 
@@ -25,26 +27,55 @@ export function createEngine(container) {
     0.1,
     3000
   );
-  camera.position.set(45, 45, 45);
+  camera.position.set(40, 45, 40);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0, 0);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 10;
-  controls.maxDistance = 145;
+  controls.maxDistance = 125;
   controls.minPolarAngle = 0.08;
-  controls.maxPolarAngle = Math.PI / 2 - 0.035;
+  controls.maxPolarAngle = Math.PI / 2 - 0.08;
+  controls.screenSpacePanning = false;
 
-  // Evitamos que una órbita o paneo extremo mande la cámara debajo del suelo.
-  // Conservamos el paneo horizontal, pero el plano de interés siempre queda
-  // a nivel de ciudad.
-  const keepCameraAboveGround = () => {
+  const targetLimit = 32;
+  const cameraHorizontalLimit = 62;
+  const minimumCameraHeight = 2.8;
+
+  // El usuario puede recorrer visualmente la ciudad, pero no abandonar el
+  // mundo ni inclinar la cámara por debajo del plano de suelo.
+  const keepCameraInsideWorld = () => {
+    controls.target.x = THREE.MathUtils.clamp(
+      controls.target.x,
+      -targetLimit,
+      targetLimit
+    );
+    controls.target.z = THREE.MathUtils.clamp(
+      controls.target.z,
+      -targetLimit,
+      targetLimit
+    );
     controls.target.y = 0;
-    camera.position.y = Math.max(camera.position.y, 1.2);
+    camera.position.y = Math.max(camera.position.y, minimumCameraHeight);
+
+    const horizontalDistance = Math.hypot(
+      camera.position.x,
+      camera.position.z
+    );
+    if (horizontalDistance > cameraHorizontalLimit) {
+      const factor = cameraHorizontalLimit / horizontalDistance;
+      camera.position.x *= factor;
+      camera.position.z *= factor;
+    }
   };
 
-  controls.addEventListener("change", keepCameraAboveGround);
+  controls.addEventListener("change", keepCameraInsideWorld);
+  keepCameraInsideWorld();
+
+  // El límite boscoso vive fuera de la cuadrícula lógica: es puramente visual,
+  // por lo que no altera calles, pathfinding ni estados de los agentes.
+  const forestBoundary = createForestBoundary(scene);
 
   // Luces base. Sus intensidades, colores y dirección se actualizan después
   // con la posición astronómica real del Sol y el ciclo día/noche.
@@ -92,7 +123,7 @@ export function createEngine(container) {
     }
 
     controls.update();
-    keepCameraAboveGround();
+    keepCameraInsideWorld();
     renderer.render(scene, camera);
   }
 
@@ -116,6 +147,7 @@ export function createEngine(container) {
     camera,
     renderer,
     controls,
+    forestBoundary,
     lights: {
       hemisphere: hemiLight,
       ambient,

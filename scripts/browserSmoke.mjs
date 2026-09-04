@@ -31,7 +31,12 @@ try {
   });
 
   await page.goto(URL, { waitUntil: "networkidle" });
-  await page.waitForTimeout(1_800);
+  await page.waitForFunction(
+    () => document.documentElement.dataset.forestReady === "true",
+    null,
+    { timeout: 15_000 }
+  );
+  await page.waitForTimeout(1_200);
 
   const state = await page.evaluate(() => {
     const canvases = [...document.querySelectorAll("canvas")];
@@ -50,6 +55,8 @@ try {
       skyHud: document.querySelector("#real-sky-status")?.textContent?.trim() || null,
       webglCanvas: Boolean(webglCanvas),
       webglContextAlive: Boolean(gl && !gl.isContextLost()),
+      forestReady: document.documentElement.dataset.forestReady || null,
+      forestTiles: Number(document.documentElement.dataset.forestTiles || 0),
     };
   });
 
@@ -66,6 +73,11 @@ try {
   }
   if (!state.webglCanvas || !state.webglContextAlive) {
     throw new Error("Three.js WebGL canvas did not initialize correctly.");
+  }
+  if (state.forestReady !== "true" || state.forestTiles < 24) {
+    throw new Error(
+      `Forest boundary did not initialize correctly (${state.forestTiles} tiles).`
+    );
   }
 } finally {
   await browser.close();
