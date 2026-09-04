@@ -15,6 +15,7 @@ export function createEngine(container) {
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
@@ -75,7 +76,7 @@ export function createEngine(container) {
 
   // El límite boscoso vive fuera de la cuadrícula lógica: es puramente visual,
   // por lo que no altera calles, pathfinding ni estados de los agentes.
-  const forestBoundary = createForestBoundary(scene);
+  const forestBoundary = createForestBoundary(scene, { renderer });
 
   // Luces base. Sus intensidades, colores y dirección se actualizan después
   // con la posición astronómica real del Sol y el ciclo día/noche.
@@ -90,11 +91,18 @@ export function createEngine(container) {
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.set(2048, 2048);
   dirLight.shadow.camera.near = 1;
-  dirLight.shadow.camera.far = 200;
-  dirLight.shadow.camera.left = -80;
-  dirLight.shadow.camera.right = 80;
-  dirLight.shadow.camera.top = 80;
-  dirLight.shadow.camera.bottom = -80;
+  dirLight.shadow.camera.far = 180;
+  dirLight.shadow.camera.left = -70;
+  dirLight.shadow.camera.right = 70;
+  dirLight.shadow.camera.top = 70;
+  dirLight.shadow.camera.bottom = -70;
+
+  // Un pequeño normalBias corrige las bandas/lineas de auto-sombreado sobre
+  // superficies GLB sin separar visualmente las sombras de los objetos.
+  dirLight.shadow.bias = -0.00015;
+  dirLight.shadow.normalBias = 0.045;
+  dirLight.shadow.radius = 2;
+
   scene.add(dirLight);
   scene.add(dirLight.target);
 
