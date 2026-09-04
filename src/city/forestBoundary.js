@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
+import { CITY_PALETTE } from "./cityVisualSystem.js";
 import {
   createForestRingLayout,
   getForestModelFit,
@@ -77,14 +78,16 @@ function createOuterTerrain() {
   const terrain = new THREE.Mesh(
     new THREE.PlaneGeometry(OUTER_TERRAIN_SIZE, OUTER_TERRAIN_SIZE),
     new THREE.MeshStandardMaterial({
-      color: 0x365d39,
+      // El terreno exterior comparte exactamente el verde base de la ciudad
+      // para que cualquier transición entre el borde urbano y el GLB sea continua.
+      color: CITY_PALETTE.ground,
       roughness: 1,
       metalness: 0,
     })
   );
   terrain.name = "forest-outer-terrain";
   terrain.rotation.x = -Math.PI / 2;
-  terrain.position.y = -0.065;
+  terrain.position.y = -0.025;
   terrain.receiveShadow = true;
   return terrain;
 }
