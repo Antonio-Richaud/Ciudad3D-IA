@@ -40,7 +40,7 @@ test("forest layout surrounds every side with every requested layer", () => {
   }
 });
 
-test("first forest layer starts safely outside the city ground", () => {
+test("first forest layer overlaps the city edge so no transition gap is visible", () => {
   const tileDepth = 14;
   const layout = createForestRingLayout({
     halfGround: HALF_GROUND,
@@ -51,11 +51,15 @@ test("first forest layer starts safely outside the city ground", () => {
   });
 
   const firstLayer = layout.placements.filter((tile) => tile.layer === 0);
-  const minimumCenterRadius = Math.min(
-    ...firstLayer.map((tile) => Math.max(Math.abs(tile.x), Math.abs(tile.z)))
-  );
+  const innerEdges = firstLayer.map((tile) => {
+    const radialCenter = ["north", "south"].includes(tile.side)
+      ? Math.abs(tile.z)
+      : Math.abs(tile.x);
+    return radialCenter - tileDepth / 2;
+  });
 
-  assert.ok(minimumCenterRadius - tileDepth / 2 > HALF_GROUND);
+  assert.ok(Math.max(...innerEdges) <= HALF_GROUND);
+  assert.ok(Math.min(...innerEdges) >= HALF_GROUND - tileDepth * 0.06);
 });
 
 test("forest layout is deterministic and staggered between layers", () => {
