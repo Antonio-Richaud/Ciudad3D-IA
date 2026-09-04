@@ -290,7 +290,7 @@ function findCityGround(scene, halfGround) {
 }
 
 function applySharedGrassColor(scene, outerTerrain, grassColor, halfGround) {
-  if (!grassColor?.isColor) return;
+  if (!grassColor?.isColor) return false;
 
   outerTerrain.material.color.copy(grassColor);
   outerTerrain.material.needsUpdate = true;
@@ -299,7 +299,10 @@ function applySharedGrassColor(scene, outerTerrain, grassColor, halfGround) {
   if (cityGround?.material?.color?.isColor) {
     cityGround.material.color.copy(grassColor);
     cityGround.material.needsUpdate = true;
+    return true;
   }
+
+  return false;
 }
 
 function colorToCssHex(color) {
@@ -316,6 +319,11 @@ function setForestSmokeState(state, metadata = {}) {
     metadata.groundHidden ?? false
   );
   document.documentElement.dataset.forestGroundMesh = metadata.groundMeshName ?? "";
+  document.documentElement.dataset.forestGroundMaterial =
+    metadata.groundMaterialName ?? "";
+  document.documentElement.dataset.forestCityGroundMatched = String(
+    metadata.cityGroundMatched ?? false
+  );
 }
 
 export function createForestBoundary(
@@ -349,7 +357,12 @@ export function createForestBoundary(
         groundMaterialName,
       } = prepareForestTile(prototype, cellSize, maxAnisotropy);
 
-      applySharedGrassColor(scene, outerTerrain, grassColor, halfGround);
+      const cityGroundMatched = applySharedGrassColor(
+        scene,
+        outerTerrain,
+        grassColor,
+        halfGround
+      );
 
       const layers = normalizedSize.z >= cellSize * 2.8 ? 3 : 5;
       const layout = createForestRingLayout({
@@ -389,12 +402,15 @@ export function createForestBoundary(
       root.userData.groundHidden = groundHidden;
       root.userData.groundMeshName = groundMeshName;
       root.userData.groundMaterialName = groundMaterialName;
+      root.userData.cityGroundMatched = cityGroundMatched;
 
       setForestSmokeState("true", {
         tileCount: layout.placements.length,
         grassColor: grassHex,
         groundHidden,
         groundMeshName,
+        groundMaterialName,
+        cityGroundMatched,
       });
 
       console.info("Bosque límite listo", {
@@ -407,6 +423,7 @@ export function createForestBoundary(
         groundHidden,
         groundMeshName,
         groundMaterialName,
+        cityGroundMatched,
       });
 
       return root;
