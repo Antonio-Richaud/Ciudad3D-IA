@@ -68,7 +68,7 @@ export function createForestRingLayout({
   tileDepth,
   layers = 4,
   tangentialOverlap = 0.18,
-  innerGapCells = 1.1,
+  innerGapCells = 0,
   minLayerSpacingCells = 1.55,
 }) {
   requirePositive(halfGround, "halfGround");
@@ -142,10 +142,13 @@ export function createForestRingLayout({
 
       for (let index = -halfCount; index <= halfCount; index++) {
         const along = index * tangentialSpacing + stagger;
+        const radialRoll = hash01(index, layer, sideIndex * 17 + 3);
+        // La primera capa solapa ligeramente el borde de la ciudad para que
+        // nunca aparezca una franja vacía entre el suelo urbano y el bosque.
         const radialJitter =
-          (hash01(index, layer, sideIndex * 17 + 3) - 0.5) *
-          tileDepth *
-          0.1;
+          layer === 0 && innerGapCells === 0
+            ? -tileDepth * (0.025 + radialRoll * 0.025)
+            : (radialRoll - 0.5) * tileDepth * 0.1;
         const rotationJitter =
           (hash01(index, layer, sideIndex * 19 + 7) - 0.5) * 0.045;
         const flip = (index + layer + sideIndex) % 2 === 0 ? 0 : Math.PI;
