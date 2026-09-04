@@ -63,6 +63,10 @@ try {
         document.documentElement.dataset.forestGroundHidden || null,
       forestGroundMesh:
         document.documentElement.dataset.forestGroundMesh || null,
+      forestGroundMaterial:
+        document.documentElement.dataset.forestGroundMaterial || null,
+      forestCityGroundMatched:
+        document.documentElement.dataset.forestCityGroundMatched || null,
     };
   });
 
@@ -87,6 +91,12 @@ try {
   }
   if (!state.forestGrassColor?.startsWith("#")) {
     throw new Error("Forest grass color could not be detected from the GLB.");
+  }
+  if (state.forestGroundHidden !== "true") {
+    throw new Error("Forest ground plate was not isolated from the repeated model.");
+  }
+  if (state.forestCityGroundMatched !== "true") {
+    throw new Error("City ground did not inherit the forest grass color.");
   }
 } finally {
   await browser.close();
